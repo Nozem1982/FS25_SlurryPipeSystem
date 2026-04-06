@@ -20,7 +20,7 @@ SPS_VALVE_TYPE_NONE      = "NONE"
 SlurryPipeManager = {}
 local SlurryPipeManager_mt = Class(SlurryPipeManager)
 
-SlurryPipeManager.SOURCE_SEARCH_RADIUS      = 30.0
+SlurryPipeManager.FILL_VOLUME_SEARCH_RADIUS = 3.0   -- XZ radius for vehicle fill volume (nurse tank) detection only
 SlurryPipeManager.DEFAULT_LITERS_PER_SECOND = 1000
 
 function SlurryPipeManager.new()
@@ -540,6 +540,73 @@ function SlurryPipeManager:registerPlaceable(placeable)
         return nil
     end
 
+    -- Recursive search through a node tree collecting ALL nodes matching name
+    local function findAllInTree(root, name, results)
+        if root == nil or root == 0 then return end
+        if getName(root) == name then table.insert(results, root) end
+        for i = 0, getNumOfChildren(root) - 1 do
+            findAllInTree(getChildAt(root, i), name, results)
+        end
+    end
+
+    -- Hide named nodes from the base game i3d. Stored so visibility can be
+    -- restored if the mod is removed while the placeable remains in the world.
+    local hiddenNodes = {}
+    local hideIndex = 0
+    while true do
+        local hKey = string.format("slurryPipeSystem.hideNodes.node(%d)", hideIndex)
+        if not xmlFile:hasProperty(hKey) then break end
+        local nodeName = xmlFile:getString(hKey .. "#name")
+        if nodeName ~= nil and nodeName ~= "" then
+            local compRoot = placeable.components ~= nil
+                and placeable.components[1] ~= nil
+                and placeable.components[1].node or nil
+            if compRoot ~= nil then
+                local matches = {}
+                findAllInTree(compRoot, nodeName, matches)
+                if #matches > 0 then
+                    for _, found in ipairs(matches) do
+                        setVisibility(found, false)
+                        table.insert(hiddenNodes, found)
+                    end
+                    print("[SPS] registerPlaceable: hidden " .. #matches .. "x '" .. nodeName .. "' on " .. tostring(placeable.configFileName))
+                else
+                    print("[SPS] registerPlaceable: hideNode '" .. nodeName .. "' not found in " .. tostring(placeable.configFileName))
+                end
+            end
+        end
+        hideIndex = hideIndex + 1
+    end
+
+    -- Disable collisions on named nodes independently of visibility.
+    -- Uses setCompoundChildActive(node, false) — stored for restore on unregister.
+    local hiddenCollisions = {}
+    local hideCollIndex = 0
+    while true do
+        local hKey = string.format("slurryPipeSystem.hideCollisions.node(%d)", hideCollIndex)
+        if not xmlFile:hasProperty(hKey) then break end
+        local nodeName = xmlFile:getString(hKey .. "#name")
+        if nodeName ~= nil and nodeName ~= "" then
+            local compRoot = placeable.components ~= nil
+                and placeable.components[1] ~= nil
+                and placeable.components[1].node or nil
+            if compRoot ~= nil then
+                local matches = {}
+                findAllInTree(compRoot, nodeName, matches)
+                if #matches > 0 then
+                    for _, found in ipairs(matches) do
+                        removeFromPhysics(found)
+                        table.insert(hiddenCollisions, found)
+                    end
+                    print("[SPS] registerPlaceable: disabled collision " .. #matches .. "x '" .. nodeName .. "' on " .. tostring(placeable.configFileName))
+                else
+                    print("[SPS] registerPlaceable: hideCollision '" .. nodeName .. "' not found in " .. tostring(placeable.configFileName))
+                end
+            end
+        end
+        hideCollIndex = hideCollIndex + 1
+    end
+
     local fillPlaneNode = xmlFile:getNode("slurryPipeSystem.fillPlane#node", nil, placeable.components, placeable.i3dMappings)
     local minY          = xmlFile:getFloat("slurryPipeSystem.fillPlane#minY", 0)
     local maxY          = xmlFile:getFloat("slurryPipeSystem.fillPlane#maxY", 1)
@@ -547,9 +614,53 @@ function SlurryPipeManager:registerPlaceable(placeable)
     print("[SPS] registerPlaceable: fillPlaneNode=" .. tostring(fillPlaneNode) .. " minY=" .. tostring(minY) .. " maxY=" .. tostring(maxY) .. " fillType=" .. tostring(fillTypeName))
     local fillType = g_fillTypeManager:getFillTypeIndexByName(fillTypeName) or FillType.LIQUIDMANURE
 
+    -- Build XZ detection bounds from authored nodes in the nodeTree.
+    -- round:     centreNode + edgeNode      (radius = XZ dist between them)
+    -- rectangle: centreNode + corner1/2     (bounds in centreNode local space)
+    -- Y of these nodes is irrelevant — only XZ is used for detection.
+    local planeBounds    = nil
+    local planeShape     = xmlFile:getString("slurryPipeSystem.fillPlane#shape", nil)
+    local centreNodeName = xmlFile:getString("slurryPipeSystem.fillPlane#centreNodeName", nil)
+    local centreNode     = findLinkedNode(centreNodeName)
+
+    if planeShape == "round" then
+        local edgeNode = findLinkedNode(xmlFile:getString("slurryPipeSystem.fillPlane#edgeNodeName", nil))
+        if centreNode ~= nil and edgeNode ~= nil then
+            local cx, _, cz = getWorldTranslation(centreNode)
+            local ex, _, ez = getWorldTranslation(edgeNode)
+            local radius = math.sqrt((cx - ex) * (cx - ex) + (cz - ez) * (cz - ez))
+            planeBounds = { shape = "round", centreNode = centreNode, radius = radius }
+            print("[SPS] registerPlaceable: round plane radius=" .. string.format("%.2f", radius))
+        else
+            print("[SPS] registerPlaceable: shape=round but centreNode or edgeNode missing")
+        end
+    elseif planeShape == "rectangle" then
+        local corner1Node = findLinkedNode(xmlFile:getString("slurryPipeSystem.fillPlane#corner1NodeName", nil))
+        local corner2Node = findLinkedNode(xmlFile:getString("slurryPipeSystem.fillPlane#corner2NodeName", nil))
+        if centreNode ~= nil and corner1Node ~= nil and corner2Node ~= nil then
+            local c1x, c1y, c1z = getWorldTranslation(corner1Node)
+            local c2x, c2y, c2z = getWorldTranslation(corner2Node)
+            local lx1, _, lz1 = worldToLocal(centreNode, c1x, c1y, c1z)
+            local lx2, _, lz2 = worldToLocal(centreNode, c2x, c2y, c2z)
+            planeBounds = {
+                shape      = "rectangle",
+                centreNode = centreNode,
+                minX       = math.min(lx1, lx2),
+                maxX       = math.max(lx1, lx2),
+                minZ       = math.min(lz1, lz2),
+                maxZ       = math.max(lz1, lz2),
+            }
+            print("[SPS] registerPlaceable: rectangle plane X[" .. string.format("%.2f", planeBounds.minX) .. ".." .. string.format("%.2f", planeBounds.maxX) .. "] Z[" .. string.format("%.2f", planeBounds.minZ) .. ".." .. string.format("%.2f", planeBounds.maxZ) .. "]")
+        else
+            print("[SPS] registerPlaceable: shape=rectangle but centreNode or corner nodes missing")
+        end
+    elseif planeShape ~= nil then
+        print("[SPS] registerPlaceable: unknown shape '" .. tostring(planeShape) .. "'")
+    end
+
     local sourceEntry = nil
     if fillPlaneNode ~= nil and (placeable.spec_silo ~= nil or placeable.spec_husbandry ~= nil or placeable.spec_siloExtension ~= nil) then
-        sourceEntry = SlurryNodeUtil.buildStoragePlaneSource(placeable, fillPlaneNode, minY, maxY, fillType)
+        sourceEntry = SlurryNodeUtil.buildStoragePlaneSource(placeable, fillPlaneNode, minY, maxY, fillType, planeBounds)
     end
     if sourceEntry ~= nil then
         table.insert(self.sourceEntries, sourceEntry)
@@ -631,6 +742,8 @@ function SlurryPipeManager:registerPlaceable(placeable)
         sourceEntry    = sourceEntry,
         storeCouplings = storeCouplings,
         linkedNodes    = linkedNodes,
+        hiddenNodes    = hiddenNodes,
+        hiddenCollisions = hiddenCollisions,
         pipeAnimNode   = xmlFile:getNode("slurryPipeSystem.pipeAnimNode#node", nil, placeable.components, placeable.i3dMappings),
         pipeAnimRX     = math.rad(xmlFile:getFloat("slurryPipeSystem.pipeAnimNode#rx", 0)),
         pipeAnimRY     = math.rad(xmlFile:getFloat("slurryPipeSystem.pipeAnimNode#ry", 0)),
@@ -656,6 +769,20 @@ function SlurryPipeManager:unregisterPlaceable(placeable)
                 for _, sc in ipairs(entry.storeCouplings) do
                     if sc.activatable ~= nil then sc.activatable:delete() end
                     if sc.chainActivatable ~= nil then sc.chainActivatable:delete() end
+                end
+            end
+            if entry.hiddenNodes ~= nil then
+                for _, nodeId in ipairs(entry.hiddenNodes) do
+                    if nodeId ~= nil and nodeId ~= 0 then
+                        setVisibility(nodeId, true)
+                    end
+                end
+            end
+            if entry.hiddenCollisions ~= nil then
+                for _, nodeId in ipairs(entry.hiddenCollisions) do
+                    if nodeId ~= nil and nodeId ~= 0 then
+                        addToPhysics(nodeId)
+                    end
                 end
             end
             if entry.linkedNodes ~= nil then
@@ -1177,6 +1304,12 @@ function SlurryPipeManager:updateActionEventTexts(vehicle)
     if vehicle.spsActionEvents == nil then return end
     local state = self:getVehicleState(vehicle)
     if state == nil then return end
+    local pumpId = vehicle.spsActionEvents.pumpEventId
+    if pumpId ~= nil then
+        g_inputBinding:setActionEventText(pumpId, vehicle:getIsTurnedOn()
+            and g_i18n:getText("action_slurryPumpOff")
+            or  g_i18n:getText("action_slurryPumpOn"))
+    end
     local flowId = vehicle.spsActionEvents.flowEventId
     if flowId ~= nil then
         g_inputBinding:setActionEventText(flowId, state.valveOpen and g_i18n:getText("action_slurryFlowClose") or g_i18n:getText("action_slurryFlowOpen"))
@@ -1811,26 +1944,33 @@ function SlurryPipeManager:detectArmConnection(vehicle, entry, arm)
     local supportsOpenPit = (tipType == SPS_TIP_TYPE_OPEN_PIT) or (tipType == SPS_TIP_TYPE_RUBBER_BOOT_PIT)
     if supportsOpenPit and not newConnected and arm.centreNode ~= nil then
         local THRESHOLD   = 0.08
-        local RADIUS_SQ   = SlurryPipeManager.SOURCE_SEARCH_RADIUS * SlurryPipeManager.SOURCE_SEARCH_RADIUS
         local centreX, centreY, centreZ = getWorldTranslation(arm.centreNode)
 
         for _, sourceEntry in ipairs(self.sourceEntries) do
             if sourceEntry.vehicle == vehicle then continue end
 
-            -- XZ proximity: arm centre must be within SOURCE_SEARCH_RADIUS of the source
-            local refX, refZ
+            -- XZ check: shape-based bounds for STORAGE_PLANE, fixed radius for FILL_VOLUME.
+            local xzOk = false
             if sourceEntry.type == SlurryNodeUtil.SOURCE_TYPE_STORAGE_PLANE then
-                local nx, _, nz = getWorldTranslation(sourceEntry.fillPlaneNode)
-                refX, refZ = nx, nz
+                local bounds = sourceEntry.planeBounds
+                if bounds == nil then continue end
+                if bounds.shape == "round" then
+                    local bx, _, bz = getWorldTranslation(bounds.centreNode)
+                    local dx = centreX - bx
+                    local dz = centreZ - bz
+                    xzOk = (dx * dx + dz * dz) <= (bounds.radius * bounds.radius)
+                elseif bounds.shape == "rectangle" then
+                    local lx, _, lz = worldToLocal(bounds.centreNode, centreX, centreY, centreZ)
+                    xzOk = lx >= bounds.minX and lx <= bounds.maxX and lz >= bounds.minZ and lz <= bounds.maxZ
+                end
             elseif sourceEntry.type == SlurryNodeUtil.SOURCE_TYPE_FILL_VOLUME then
-                local nx, _, nz = getWorldTranslation(sourceEntry.baseNode)
-                refX, refZ = nx, nz
-            else
-                continue
+                local bx, _, bz = getWorldTranslation(sourceEntry.baseNode)
+                local dx = centreX - bx
+                local dz = centreZ - bz
+                local r = SlurryPipeManager.FILL_VOLUME_SEARCH_RADIUS
+                xzOk = (dx * dx + dz * dz) <= (r * r)
             end
-            local dx = centreX - refX
-            local dz = centreZ - refZ
-            if dx * dx + dz * dz > RADIUS_SQ then continue end
+            if not xzOk then continue end
 
             local surfaceY = SlurryNodeUtil.getSurfaceWorldY(sourceEntry, centreX, centreZ)
             if surfaceY == -math.huge then continue end
