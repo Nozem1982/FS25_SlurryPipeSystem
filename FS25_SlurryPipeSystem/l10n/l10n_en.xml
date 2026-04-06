@@ -1,7 +1,12 @@
 <?xml version="1.0" encoding="utf-8" standalone="no"?>
 <l10n>
     <texts>
-        <!-- Pump on/off (TurnOnVehicle override) -->
+		<!-- Inputs -->
+		<text name="input_SPS_TOGGLE_PUMP"      		text="SPS Pump On/Off" />
+		<text name="input_SPS_TOGGLE_FLOW"      		text="SPS Flow Open/Close" />
+		<text name="input_SPS_TOGGLE_DIRECTION" 		text="SPS Flow Direction" />
+        
+		<!-- Pump on/off (TurnOnVehicle override) -->
         <text name="action_slurryPumpOn"  				text="PTO: Pump is OFF" />
         <text name="action_slurryPumpOff" 				text="PTO: Pump is ON" />
 		
