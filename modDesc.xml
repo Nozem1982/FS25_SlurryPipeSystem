@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<modDesc descVersion="108">
+
+    <author>Oscar Mods</author>
+    <version>1.0.0.0</version>
+    <title>
+        <en>Slurry Pipe System</en>
+        <de>Gülle-Rohrsystem</de>
+        <fr>Système de Tuyau à Lisier</fr>
+    </title>
+    <description>
+        <en><![CDATA[Slurry Pipe System
+ 
+Replaces vanilla drive-in slurry filling with a realistic physical pipe and pump system.
+ 
+Tankers must physically connect fill arms or pipes to a slurry source before any flow can begin. The pump must be running, and the correct valve must be opened.
+ 
+Controls:
+- Pump On/Off: Starts the pump motor. Required before any flow.
+- Pipe Valve: Opens the pipe circuit for filling or discharging via connected pipes or fill arms.
+- Spreader Valve: Opens the spreader discharge. Requires pump on.
+- Direction: Switches between fill and discharge for the pipe circuit.
+ 
+Features:
+- Open pit fill arms with surface detection
+- Rubber boot port docking
+- Physical pipe chain connections between tanker and store
+- Tanker-to-tanker transfer via pipe coupling
+- Nurse tank operation
+- Conduit pump support
+- Spreader valve control for slurry spreaders
+- Compatible with Manual Attach
+- Multiplayer compatible]]></en>
+        <de><![CDATA[Gülle-Rohrsystem
+ 
+Ersetzt das Vanille-Einfahren-und-Knopf-Drücken durch ein realistisches physisches Rohr- und Pumpsystem.
+ 
+Tanker müssen physisch Füllarme oder Rohre an eine Güllequelle anschließen, bevor der Fluss beginnen kann. Die Pumpe muss laufen und das richtige Ventil muss geöffnet sein.
+ 
+Steuerung:
+- Pumpe Ein/Aus: Startet den Pumpenmotor. Erforderlich vor jedem Fluss.
+- Rohrventil: Öffnet den Rohrkreislauf zum Befüllen oder Entleeren über angeschlossene Rohre oder Füllarme.
+- Streuerventil: Öffnet die Streuerdüse. Pumpe muss laufen.
+- Richtung: Wechselt zwischen Befüllen und Entleeren im Rohrkreislauf.
+ 
+Funktionen:
+- Offene Grubenfüllarme mit Oberflächenerkennung
+- Andocken an Gummistiefelanschlüsse
+- Physische Rohrkettenverbindungen zwischen Tanker und Lager
+- Tanker-zu-Tanker-Übertragung über Rohrkupplung
+- Pflegetankbetrieb
+- Konduitpumpenunterstützung
+- Streuerventilsteuerung für Güllestreuer
+- Kompatibel mit Manual Attach
+- Multiplayer-kompatibel]]></de>
+        <fr><![CDATA[Système de Tuyau à Lisier
+ 
+Remplace le remplissage vanilla en marche-arrière par un système réaliste de tuyaux et de pompe.
+ 
+Les citernes doivent connecter physiquement des bras de remplissage ou des tuyaux à une source de lisier avant que le flux puisse commencer. La pompe doit être en marche et la bonne vanne doit être ouverte.
+ 
+Commandes:
+- Pompe On/Off: Démarre le moteur de la pompe. Requis avant tout flux.
+- Vanne tuyau: Ouvre le circuit de tuyauterie pour le remplissage ou la vidange via tuyaux ou bras de remplissage.
+- Vanne épandeur: Ouvre l'épandeur. La pompe doit être en marche.
+- Direction: Bascule entre remplissage et vidange pour le circuit de tuyauterie.
+ 
+Fonctionnalités:
+- Bras de remplissage à fosse ouverte avec détection de surface
+- Raccordement à des ports de botte en caoutchouc
+- Connexions de chaînes de tuyaux physiques entre citerne et stockage
+- Transfert citerne-à-citerne via couplage de tuyaux
+- Opération de citerne nourrice
+- Support de pompe conduit
+- Contrôle de vanne d'épandeur pour épandeurs de lisier
+- Compatible avec Manual Attach
+- Compatible multijoueur]]></fr>
+    </description>
+    <iconFilename>icon_SPS.dds</iconFilename>
+
+    <l10n filenamePrefix="l10n/l10n" />
+	
+	<extraSourceFiles>
+        <sourceFile filename="scripts/util/SlurryDebug.lua" />
+        <sourceFile filename="scripts/util/SlurryNodeUtil.lua" />
+        <sourceFile filename="scripts/util/SPSEvents.lua" />
+		<sourceFile filename="scripts/util/SPSPipeVisual.lua"/>
+		<sourceFile filename="scripts/util/SPSPipeActivatable.lua"/>
+		<sourceFile filename="scripts/util/SPSPipeChain.lua"/>
+		<sourceFile filename="scripts/util/SPSChainActivatable.lua"/>
+		<sourceFile filename="scripts/util/SPSPumpControlActivatable.lua"/>
+		<sourceFile filename="scripts/util/SPSConduitHUDExtension.lua"/>
+		
+        <sourceFile filename="scripts/manager/SlurryPipeManager.lua" />
+
+        <sourceFile filename="scripts/overrides/ManureBarrelOverride.lua" />
+
+        <sourceFile filename="scripts/init.lua" />
+		
+	</extraSourceFiles>
+	
+	<actions>
+		<action name="SPS_TOGGLE_PUMP"      axisType="HALF"/>
+		<action name="SPS_TOGGLE_FLOW"      axisType="HALF"/>
+		<action name="SPS_TOGGLE_DIRECTION" axisType="HALF"/>
+		<action name="SPS_TOGGLE_SPREADER"  axisType="HALF"/>
+	</actions>
+	
+	<inputBinding>
+		<actionBinding action="SPS_TOGGLE_PUMP">
+			<binding device="KB_MOUSE_DEFAULT" input="KEY_b" axisComponent="+" index="1" />
+		</actionBinding>
+		<actionBinding action="SPS_TOGGLE_FLOW">
+			<binding device="KB_MOUSE_DEFAULT" input="KEY_x" axisComponent="+" index="1" />
+		</actionBinding>
+		<actionBinding action="SPS_TOGGLE_DIRECTION">
+			<binding device="KB_MOUSE_DEFAULT" input="KEY_y" axisComponent="+" index="1" />
+		</actionBinding>
+		<actionBinding action="SPS_TOGGLE_SPREADER">
+			<binding device="KB_MOUSE_DEFAULT" input="KEY_z" axisComponent="+" index="1" />
+		</actionBinding>
+	</inputBinding>
+	
+	<vehicleTypes>
+        <type name="manurePump" parent="implement" className="Vehicle" filename="$dataS/scripts/vehicles/Vehicle.lua">
+            <specialization name="turnOnVehicle"/>
+        </type>
+	</vehicleTypes>
+	
+	<storeItems>
+        <storeItem xmlFilename="vehicles/PTOSlurryPump/PTOSlurryPump.xml"/>
+    </storeItems>
+	
+	<brands>
+        <brand name="SPS" title="Slurry Pipe System" image="brand_SPS.dds" />
+    </brands>
+</modDesc>

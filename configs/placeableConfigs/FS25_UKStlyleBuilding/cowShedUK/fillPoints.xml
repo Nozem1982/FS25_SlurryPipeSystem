@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- FS25_UKStlyleBuilding -->
+<!-- cowShedUK -->
+
+<!-- FS25_SlurryPipeSystem — Placeable fillPoints.xml -->
+<!-- Author: Oscar Mods -->
+<!-- Version: 1.0.0.0 -->
+
+<slurryPipeSystem>
+ 
+    <nodeTree filename="nodeTree.i3d"/>
+ 
+    <pipeAnimNode node="slurryGridA09" rx="-13" ry="0" rz="0"/>
+ 
+    <fillPlane
+        node="manurePlane_milk"
+        minY="-1.94"
+        maxY="0.0"
+        fillType="LIQUIDMANURE"
+        shape="rectangle"
+        centreNodeName="slurryPlaneCentre"
+        corner1NodeName="slurryPlaneCorner1"
+        corner2NodeName="slurryPlaneCorner2"
+    />
+ 
+    <pipeCouplings>
+ 
+        <pipeCoupling
+            id="1"
+            mountNodeName="SPS_pipeCoupler01"
+            flowDirection="BOTH"
+            valveType="NONE"
+            deployable="true"
+            maxPipeLength="4.0"
+        />
+ 
+    </pipeCouplings>
+ 
+</slurryPipeSystem>

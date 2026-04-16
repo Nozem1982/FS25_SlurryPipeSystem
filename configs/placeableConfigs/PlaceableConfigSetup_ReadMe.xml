@@ -1,0 +1,308 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+================================================================================
+  FS25_SlurryPipeSystem — Placeable fillPoints Reference
+  Oscar Mods
+================================================================================
+  This file is documentation only. It is not loaded by the mod.
+  Place it in: configs/placeableConfigs/
+================================================================================
+-->
+
+<slurryPipeSystemPlaceableReference>
+
+    <!-- ========================================================================
+         FOLDER STRUCTURE
+    =========================================================================
+
+    configs/
+    └── placeableConfigs/
+        ├── PLACEABLE_REFERENCE.xml         ← this file
+        ├── <placeableName>/
+        │   ├── fillPoints.xml              ← placeable SPS config
+        │   └── nodeTree.i3d               ← SPS nodes for this placeable
+        └── ...
+
+    The folder name under placeableConfigs/ must match the placeable's config
+    filename (without .xml). The manager scans this folder name against loaded
+    placeables at finalizePlacement time.
+
+    Some placeables have variants that share a config — the manager matches by
+    substring, so a folder named "cowShedUK" will match both "cowShedUK" and
+    "cowShedUK_nonMilk". Use a subfolder for the non-milk variant if it requires
+    a different fillPoints.xml.
+
+    ======================================================================== -->
+
+
+    <!-- ========================================================================
+         NODE TREE — i3d SETUP
+    =========================================================================
+
+    All SPS nodes for a placeable are authored in a separate nodeTree i3d,
+    typically named "nodeTree.i3d", placed alongside the placeable fillPoints.xml.
+
+    The nodeTree is loaded via loadI3DFile at runtime and linked into the placeable
+    scene hierarchy. It must have one root TransformGroup containing a single
+    container child whose name matches an existing node in the placeable's own
+    component hierarchy. The manager parents the nodeTree root into that node.
+
+    Do NOT use cloneSharedI3DNode — cloning breaks skin bindings.
+
+    ── FULL NODE TREE STRUCTURE ──────────────────────────────────────────────
+
+    nodeTree root (TransformGroup)
+    └── <containerName> (TransformGroup)     ← must match a node in the placeable i3d
+        ├── pipeCouplers (TransformGroup)
+        │   ├── SPS_pipeCoupler01            ← coupling 1 mount point
+        │   │   └── SPS_pipeCoupler01Arcs
+        │   │       ├── SPS_pipeCoupler01Arc01  ← arc detection node left
+        │   │       └── SPS_pipeCoupler01Arc02  ← arc detection node right
+        │   ├── SPS_pipeCoupler02            ← coupling 2 mount point (if needed)
+        │   │   └── SPS_pipeCoupler02Arcs
+        │   │       ├── SPS_pipeCoupler02Arc01
+        │   │       └── SPS_pipeCoupler02Arc02
+        │   └── (repeat for SPS_pipeCoupler03 etc. if required)
+        │
+        ├── fillPlaneNodes (TransformGroup)  ← detection nodes for fill plane shape
+        │   ├── slurryPlaneCentre            ← centre of the fill area (all shapes)
+        │   ├── slurryPlaneEdge              ← edge point — round shape only
+        │   ├── slurryPlaneCorner1           ← first corner — rectangle shape only
+        │   └── slurryPlaneCorner2           ← opposite corner — rectangle shape only
+        │
+        └── effects (TransformGroup)         ← inlet effect nodes (if used)
+            └── effect (TransformGroup)      ← PipeEffect shape node
+                └── pipeEffectSmoke          ← smoke/particle emitter
+
+    ── NODE PLACEMENT RULES ──────────────────────────────────────────────────
+
+    SPS_pipeCouplerXX
+        Place at the physical centre of the coupling mouth on the building.
+        Rotation: local Z-axis pointing outward away from the building wall.
+
+    SPS_pipeCouplerXXArc01 / Arc02
+        Place symmetrically either side of the coupler mouth:
+            1.5m left and right in local X, 2.5m forward in local Z.
+        These define the arc detection triangle. A vehicle or chain terminus
+        must have overlapping arc nodes for a pipe connection to be offered.
+
+    slurryPlaneCentre
+        Place at ground level at the centre of the slurry pit or tank opening.
+        Used as the XZ sampling position for surface height detection, and as
+        the centre of the fill plane detection shape.
+
+    slurryPlaneEdge (round shape only)
+        Place at the edge of the circular pit at ground level.
+        Distance from centre to edge defines the detection radius.
+        A fill arm upper node must fall within this radius to register a connection.
+
+    slurryPlaneCorner1 / slurryPlaneCorner2 (rectangle shape only)
+        Place at two diagonally opposite corners of the rectangular pit at ground level.
+        The rectangle they define is the detection zone for fill arm upper nodes.
+
+    effect / pipeEffectSmoke
+        Place at the physical inlet point where slurry enters the store —
+        typically at the top of the inlet pipe or the pit opening.
+        The PipeEffect streams visually from the connecting pipe end to this node.
+        pipeEffectSmoke is repositioned dynamically as stream length changes.
+
+    ── DEPLOYABLE COUPLING ANIM NODE ─────────────────────────────────────────
+
+    When a coupling has deployable="true", the <pipeAnimNode> element in
+    fillPoints.xml specifies a node in the placeable's own i3d (not the nodeTree)
+    to rotate when the coupling is deployed. This is used to swing open a gate,
+    lid or cover that conceals the coupling when it is not in use.
+
+    The node is driven directly by SPS — it is not controlled by vanilla animation.
+    rx, ry, rz are the Euler rotation in degrees applied when deployed.
+    When undeployed the rotation is not modified — vanilla animation controls it.
+
+    ======================================================================== -->
+
+
+    <!-- ========================================================================
+         FILL PLANE SURFACE DETECTION
+    =========================================================================
+
+    The fill plane determines two things:
+        1. Whether a fill arm upper node is inside the store's fill area
+           (confirms the arm is positioned over the correct store).
+        2. The current slurry surface Y position used to check whether
+           the arm lower node is submerged for flow to begin.
+
+    Surface Y is read from the engine-managed fill plane node each tick.
+    The fill plane node Y is driven by the engine based on current fill level,
+    moving between minY (empty) and maxY (full) in the node's local space.
+    SPS converts this to world Y via getWorldTranslation on the node.
+
+    For STORAGE_PLANE sources (placeables) the surface Y is read directly
+    from the fill plane node world translation — no getFillPlaneHeightAtLocalPos
+    is used. The node must be the engine-animated fill plane shape.
+
+    shape="round"
+        Uses centreNode and edgeNode to define a circular detection zone.
+        Radius = distance between centreNode and edgeNode at placement time.
+        Fill arm upper node must fall within this radius in XZ to register.
+
+    shape="rectangle"
+        Uses centreNode, corner1Node and corner2Node to define a rectangle.
+        Fill arm upper node must fall within the rectangle in XZ to register.
+
+    If shape is omitted, no shape-based detection is used and connection is
+    confirmed by the fill arm's own trigger volume check only.
+
+    ======================================================================== -->
+
+
+    <!-- ========================================================================
+         PLACEABLE fillPoints.xml — ELEMENT REFERENCE
+    =========================================================================
+
+    ── <nodeTree> ────────────────────────────────────────────────────────────
+
+    <nodeTree filename="nodeTree.i3d"/>
+
+    filename    Path to the nodeTree i3d relative to this fillPoints.xml.
+
+    ── <pipeAnimNode> ────────────────────────────────────────────────────────
+
+    <pipeAnimNode node="..." rx="N" ry="N" rz="N"/>
+
+    node        Node name in the placeable's own i3d (not the nodeTree).
+                This node is rotated when a deployable coupling on this
+                placeable is deployed by the player.
+    rx ry rz    Euler rotation in degrees applied to the node when deployed.
+                When undeployed, SPS does not touch the node rotation —
+                vanilla animation or default state controls it.
+
+    Omit this element if the placeable has no deployable couplings, or if no
+    visual rotation is needed when a coupling is deployed.
+
+    ── <fillPlane> ───────────────────────────────────────────────────────────
+
+    <fillPlane
+        node="..."
+        minY="N.N"
+        maxY="N.N"
+        fillType="..."
+        shape="round|rectangle"
+        centreNodeName="..."
+        edgeNodeName="..."
+        corner1NodeName="..."
+        corner2NodeName="..."
+    />
+
+    node            Engine-animated fill plane node name in the placeable i3d.
+                    The engine moves this node's Y between minY and maxY as
+                    the storage fills and empties.
+    minY            Local Y of the fill plane node when the storage is empty.
+    maxY            Local Y of the fill plane node when the storage is full.
+    fillType        Fill type string for this storage (e.g. LIQUIDMANURE).
+
+    shape="round"       Circular arm detection zone.
+                        Requires: centreNodeName, edgeNodeName.
+    shape="rectangle"   Rectangular arm detection zone.
+                        Requires: centreNodeName, corner1NodeName, corner2NodeName.
+
+    centreNodeName  Node in the nodeTree at the centre of the fill area.
+    edgeNodeName    Node at the edge of the fill area — round shape only.
+    corner1NodeName First corner of the rectangle — rectangle shape only.
+    corner2NodeName Diagonally opposite corner — rectangle shape only.
+
+    ── <pipeCouplings> ───────────────────────────────────────────────────────
+
+    <pipeCouplings>
+        <pipeCoupling
+            id="N"
+            mountNodeName="..."
+            flowDirection="DISCHARGE|FILL|BOTH"
+            valveType="MANUAL|HYDRAULIC|NONE"
+            deployable="bool"
+            maxPipeLength="N.N"
+        >
+            <effects inletDistance="N.N">
+                <effectNode ... />
+            </effects>
+        </pipeCoupling>
+    </pipeCouplings>
+
+    id              Unique integer ID for this coupling within the placeable.
+
+    mountNodeName   Node name of the coupling mount point in the nodeTree.
+                    Arc detection nodes must exist as children named:
+                        <mountNodeName>Arcs
+                            <mountNodeName>Arc01
+                            <mountNodeName>Arc02
+
+    flowDirection
+        DISCHARGE   Only allows slurry to be pumped INTO this store.
+                    Vehicles cannot pull slurry out via this coupling.
+                    The conduit pump respects this — it will not pull from
+                    a DISCHARGE-only coupling regardless of its direction setting.
+        FILL        Only allows slurry to be pulled OUT of this store.
+        BOTH        No restriction — flow in either direction is permitted.
+
+    valveType
+        MANUAL      Valve is opened by the player at the coupling using long press R.
+        HYDRAULIC   Valve is cab-controlled — no manual valve interaction at coupling.
+        NONE        No valve — flow begins immediately when connected and pump is on.
+                    Standard for placeable store couplings where the store itself
+                    does not have a physical valve.
+
+    deployable      true = coupling is hidden by default on the placeable.
+                    Player deploys it via long press R when within range.
+                    Use for couplings that are only needed occasionally,
+                    e.g. a pipe port concealed on a building wall.
+                    Pair with <pipeAnimNode> to rotate a cover or gate on deploy.
+
+    maxPipeLength   Maximum distance in metres for a bez pipe or chain terminus
+                    to connect to this coupling. Typical: 4.0–8.0.
+                    Omit to allow connection at any distance.
+
+    <effects> (optional child of <pipeCoupling>)
+        Declares the visual inlet effect played when slurry flows into this coupling.
+
+        inletDistance   Stream length in metres from the pipe end to the inlet.
+                        Set to match the physical distance from the coupling mount
+                        node to where slurry visually enters the store.
+
+        <effectNode
+            effectClass="PipeEffect"    Must be PipeEffect for slurry stream visuals.
+            effectNode="..."            Node name in the nodeTree for the PipeEffect shape.
+            materialType="pipe"         Use "pipe" for slurry pipe effect material.
+            maxBending="N.N"            Maximum pipe bending factor (0.0–1.0).
+            extraDistance="N.N"         Extra stream distance added to the inlet offset.
+            positionUpdateNodes="..."   Space-separated node names to reposition as
+                                        stream length updates (e.g. pipeEffectSmoke).
+        />
+        <effectNode
+            effectNode="..."            Node name of the secondary smoke/particle effect.
+            materialType="unloadingSmoke"
+            startDelay="N.N"            Seconds before this effect starts after flow begins.
+            alignToWorldY="true"        Keeps the emitter aligned to world up axis.
+        />
+
+    ── <hideNodes> ───────────────────────────────────────────────────────────
+
+    <hideNodes>
+        <node name="..."/>
+    </hideNodes>
+
+    Lists nodes in the placeable i3d to hide when SPS is active on this placeable.
+    Use to suppress vanilla drive-in trigger meshes, fill towers, ramps or any
+    geometry that conflicts with SPS pipe connections.
+    Node names must match i3dMapping ids or node names in the placeable i3d.
+
+    ── <hideCollisions> ──────────────────────────────────────────────────────
+
+    <hideCollisions>
+        <node name="..."/>
+    </hideCollisions>
+
+    Lists collision nodes in the placeable i3d to disable when SPS is active.
+    Use to remove vanilla drive-in ramp collisions or fill tower collision bodies
+    that would block vehicle access or interfere with pipe placement.
+
+    ======================================================================== -->
+
+</slurryPipeSystemPlaceableReference>

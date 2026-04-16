@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Kotte TSA -->
+
+<!-- FS25_SlurryPipeSystem — Vehicle fillPoints.xml -->
+<!-- Author: Oscar Mods -->
+<!-- Version: 1.0.0.0 -->
+
+<slurryPipeSystem>
+
+    <nodeTree filename="nodeTree.i3d"/>
+
+    <flow litersPerSecond="2000"/>
+
+    <pump selfPowered="true"/>
+
+    <sounds>
+        <engineLoop
+            file="$data/vehicles/agi/utx44/sounds/utx44_loop.gls"
+            linkNode="dischargeNode"
+            innerRadius="10"
+            outerRadius="80"
+        />
+    </sounds>
+
+    <fillArms/>
+
+    <pipeCouplings>
+
+        <pipeCoupling
+            id="1"
+            mountNodeName="SPS_pipeCoupler01"
+            valveType="NONE"
+            maxPipeLength="4.0"
+            fillUnitIndex="1"
+            valveFromRearControl="true"
+        />
+
+    </pipeCouplings>
+
+    <rubberBootPorts>
+
+        <rubberBootPort
+            id="1"
+            lowerNodeName="SPS_rubberBootLower01"
+            upperNodeName="SPS_rubberBootUpper01"
+            valveType="NONE"
+            fillUnitIndex="1"
+        />
+
+    </rubberBootPorts>
+
+    <pumpControls>
+
+        <pumpControl
+            id="1"
+            nodeName="rearControlNode"
+            radius="1.5"
+        />
+
+    </pumpControls>
+
+</slurryPipeSystem>

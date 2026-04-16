@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- cowBarnBig GEA -->
+
+<!-- FS25_SlurryPipeSystem — Placeable fillPoints.xml -->
+<!-- Author: Oscar Mods -->
+<!-- Version: 1.0.0.0 -->
+
+<slurryPipeSystem>
+
+    <nodeTree filename="nodeTree.i3d"/>
+
+    <pipeCouplings>
+
+        <pipeCoupling
+            id="1"
+            mountNodeName="SPS_pipeCoupler01"
+            flowDirection="BOTH"
+            valveType="MANUAL"
+            deployable="false"
+            maxPipeLength="4.0"
+        />
+
+    </pipeCouplings>
+
+    <hideNodes>
+        <node name="fillmasterS"/>
+    </hideNodes>
+
+    <hideCollisions>
+        <node name="fillmasterS"/>
+        <node name="fence"/>
+    </hideCollisions>
+
+</slurryPipeSystem>

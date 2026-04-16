@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- FS25_mrhLiquidManureTank -->
+<!-- liquidManureTank -->
+
+<!-- FS25_SlurryPipeSystem — Placeable fillPoints.xml -->
+<!-- Author: Oscar Mods -->
+<!-- Version: 1.0.0.0 -->
+
+<slurryPipeSystem>
+ 
+    <nodeTree filename="nodeTree.i3d"/>
+ 
+    <fillPlane
+        node="liquidManurePlane"
+        minY="0.09"
+        maxY="6.4"
+        fillType="LIQUIDMANURE"
+    />
+ 
+    <pipeCouplings>
+ 
+        <pipeCoupling
+            id="1"
+            mountNodeName="SPS_pipeCoupler01"
+            flowDirection="DISCHARGE"
+            valveType="MANUAL"
+			deployable="false"
+            maxPipeLength="4.0"
+        >
+            <effects inletDistance="10.0">
+                <effectNode effectClass="PipeEffect" effectNode="effect" materialType="pipe"
+                            maxBending="0.8" extraDistance="0.1" positionUpdateNodes="pipeEffectSmoke"/>
+                <effectNode effectNode="pipeEffectSmoke" materialType="unloadingSmoke"
+                            startDelay="0.1" alignToWorldY="true"/>
+            </effects>
+        </pipeCoupling>
+ 
+        <pipeCoupling
+            id="2"
+            mountNodeName="SPS_pipeCoupler02"
+            flowDirection="BOTH"
+            valveType="MANUAL"
+			deployable="false"
+            maxPipeLength="4.0"
+        />
+ 
+    </pipeCouplings>
+ 
+    <hideNodes>
+        <node name="fillTowerNode"/>
+        <node name="fillTowerPipe"/>
+        <node name="fillTowerPipe_boltDecals"/>
+    </hideNodes>
+ 
+    <hideCollisions>
+        <node name="fillTowerPipe_collisions"/>
+        <node name="tipCollisions_fillTower"/>
+        <node name="collisionFillTower"/>
+    </hideCollisions>
+ 
+</slurryPipeSystem>
+

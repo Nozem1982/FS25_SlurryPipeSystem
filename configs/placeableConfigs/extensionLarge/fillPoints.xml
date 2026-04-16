@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Extension Large -->
+
+<!-- FS25_SlurryPipeSystem — Placeable fillPoints.xml -->
+<!-- Author: Oscar Mods -->
+<!-- Version: 1.0.0.0 -->
+
+<slurryPipeSystem>
+ 
+    <nodeTree filename="nodeTree.i3d"/>
+ 
+    <fillPlane
+        node="fillPlane"
+        minY="0"
+        maxY="2.395"
+        fillType="LIQUIDMANURE"
+        shape="round"
+        centreNodeName="slurryPlaneCentre"
+        edgeNodeName="slurryPlaneEdge"
+    />
+ 
+</slurryPipeSystem>
