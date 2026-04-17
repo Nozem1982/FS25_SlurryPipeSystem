@@ -2,11 +2,7 @@
 
 **Oscar Mods — Farming Simulator 2025**
 
-Replaces the vanilla drive-in trigger slurry filling system with a realistic physical pipe and connection system. 
-Tankers must physically position fill arms over slurry pits, connect pipes between vehicles and stores, or use a 
-PTO-driven pump to move slurry between two points. 
-
-No drive-in triggers. No automatic filling.
+Replaces the vanilla drive-in trigger slurry filling system with a realistic physical pipe and connection system. Tankers must physically position fill arms over slurry pits, connect strap pipes between vehicles and stores, or use a PTO-driven conduit pump to move slurry between two points. No drive-in triggers. No automatic filling.
 
 ---
 
@@ -16,12 +12,12 @@ No drive-in triggers. No automatic filling.
 - [Controls](#controls)
 - [Fill Arm — Loading from a Store](#fill-arm--loading-from-a-store)
 - [Fill Arm — Tanker to Tanker](#fill-arm--tanker-to-tanker)
-- [Pipe — Loading from a Store](#pipe--loading-from-a-store)
-- [Pipe — Discharging (Pumped)](#pipe--discharging-pumped)
-- [Pipe — Discharging (Gravity)](#pipe--discharging-gravity)
+- [Strap Pipe — Loading from a Store](#strap-pipe--loading-from-a-store)
+- [Strap Pipe — Discharging (Pumped)](#strap-pipe--discharging-pumped)
+- [Strap Pipe — Discharging (Gravity)](#strap-pipe--discharging-gravity)
 - [Nurse Tank (FRC65) — Fill Arm Loading](#nurse-tank-frc65--fill-arm-loading)
 - [Nurse Tank (FRC65) — Pipe Connection](#nurse-tank-frc65--pipe-connection)
-- [PTO Pump](#PTO pump)
+- [Conduit Pump](#conduit-pump)
 - [Universal Rules](#universal-rules)
 - [Setting Up a Vehicle Config](#setting-up-a-vehicle-config)
 - [Setting Up a Placeable Config](#setting-up-a-placeable-config)
@@ -90,7 +86,7 @@ All SPS actions fire regardless of fold state or implement power state. Motor an
 
 ---
 
-## Pipe — Loading from a Store
+## Strap Pipe — Loading from a Store
 
 1. Park tanker within pipe length of the store inlet coupling. Maximum pipe length is defined per vehicle in its `fillPoints.xml`.
 2. Press **Pump ON** in the cab — PTO engages.
@@ -103,7 +99,7 @@ All SPS actions fire regardless of fold state or implement power state. Motor an
 
 ---
 
-## Pipe — Discharging (Pumped)
+## Strap Pipe — Discharging (Pumped)
 
 1. Park tanker within pipe length of the destination inlet.
 2. Press **Pump ON** in the cab.
@@ -116,7 +112,7 @@ All SPS actions fire regardless of fold state or implement power state. Motor an
 
 ---
 
-## Pipe — Discharging (Gravity)
+## Strap Pipe — Discharging (Gravity)
 
 Pump is **not required** for gravity discharge.
 
@@ -157,9 +153,9 @@ The FRC65 is a passive vessel with no pump of its own.
 
 ---
 
-## PTO Pump
+## Conduit Pump
 
-The PTO pump (e.g. PTO Slurry Pump) is a pass-through implement — it has no fill unit of its own. Slurry moves directly between two connected couplings.
+The conduit pump (e.g. PTO Slurry Pump) is a pass-through implement — it has no fill unit of its own. Slurry moves directly between two connected couplings.
 
 - Attach to a tractor via PTO.
 - Connect a strap pipe to **coupling A** (one side) and another to **coupling B** (the other side).
