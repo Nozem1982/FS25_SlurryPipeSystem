@@ -90,7 +90,7 @@ All SPS actions fire regardless of fold state or implement power state. Motor an
 
 ---
 
-## Strap Pipe — Loading from a Store
+## Pipe — Loading from a Store
 
 1. Park tanker within pipe length of the store inlet coupling. Maximum pipe length is defined per vehicle in its `fillPoints.xml`.
 2. Press **Pump ON** in the cab — PTO engages.
@@ -103,7 +103,7 @@ All SPS actions fire regardless of fold state or implement power state. Motor an
 
 ---
 
-## Strap Pipe — Discharging (Pumped)
+## Pipe — Discharging (Pumped)
 
 1. Park tanker within pipe length of the destination inlet.
 2. Press **Pump ON** in the cab.
@@ -116,7 +116,7 @@ All SPS actions fire regardless of fold state or implement power state. Motor an
 
 ---
 
-## Strap Pipe — Discharging (Gravity)
+## Pipe — Discharging (Gravity)
 
 Pump is **not required** for gravity discharge.
 
@@ -157,9 +157,9 @@ The FRC65 is a passive vessel with no pump of its own.
 
 ---
 
-## Conduit Pump
+## PTO Pump
 
-The conduit pump (e.g. PTO Slurry Pump) is a pass-through implement — it has no fill unit of its own. Slurry moves directly between two connected couplings.
+The PTO pump (e.g. PTO Slurry Pump) is a pass-through implement — it has no fill unit of its own. Slurry moves directly between two connected couplings.
 
 - Attach to a tractor via PTO.
 - Connect a strap pipe to **coupling A** (one side) and another to **coupling B** (the other side).
