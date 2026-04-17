@@ -1,629 +1,492 @@
-# FS25_SlurryPipeSystem
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+================================================================================
+  FS25_SlurryPipeSystem — fillPoints Reference
+  Oscar Mods
+================================================================================
+  This file is documentation only. It is not loaded by the mod.
+  Place it in: configs/
+  Each vehicle and placeable has its own fillPoints.xml in a subfolder.
+================================================================================
+-->
+
+<slurryPipeSystemReference>
+
+    <!-- ========================================================================
+         FOLDER STRUCTURE
+    =========================================================================
+
+    configs/
+    ├── REFERENCE.xml                       ← this file
+    ├── vehicleConfigs/
+    │   ├── <vehicleName>/
+    │   │   ├── fillPoints.xml              ← vehicle SPS config
+    │   │   └── nodeTree.i3d               ← SPS nodes for this vehicle
+    │   └── ...
+    └── placeableConfigs/
+        ├── <placeableName>/
+        │   └── fillPoints.xml             ← placeable SPS config
+        └── ...
+
+    The folder name under vehicleConfigs/ must exactly match the vehicle's
+    i3d filename without extension. The manager matches by scanning the folder
+    name against the loaded vehicle's config filename at map load time.
+
+    ======================================================================== -->
+
+
+    <!-- ========================================================================
+         NODE TREE — i3d SETUP
+    =========================================================================
+
+    All SPS nodes for a vehicle are authored in a separate nodeTree i3d,
+    typically named "nodeTree.i3d", placed alongside the vehicle fillPoints.xml.
+
+    The nodeTree is loaded via loadI3DFile (not cloned) at runtime and linked
+    into the vehicle scene hierarchy. It must have one root TransformGroup.
+    All SPS nodes sit inside that root.
+
+    Do NOT use cloneSharedI3DNode for nodeTree files — cloning breaks skin bindings.
+
+    EXCEPTION: Conduit pump vehicles (conduit="true") have their coupling nodes
+    authored directly in the vehicle's own i3d. No nodeTree is needed and the
+    <nodeTree> element should be omitted from their fillPoints.xml. The manager
+    finds the coupling nodes by searching the vehicle rootNode by name.
+
+    ── FULL NODE TREE STRUCTURE ──────────────────────────────────────────────
+
+    nodeTree root (TransformGroup)
+    │
+    ├── effectNode (TransformGroup)
+    │   └── effect (TransformGroup)             ← PipeEffect shape node
+    │       └── pipeEffectSmoke (TransformGroup) ← smoke/particle emitter
+    │
+    ├── fillArms (TransformGroup)
+    │   ├── SPS_fillArmCentre01                 ← OPEN_PIT nozzle centre
+    │   ├── SPS_fillArmUpper01                  ← OPEN_PIT upper detection
+    │   ├── SPS_fillArmLower01                  ← OPEN_PIT lower detection
+    │   ├── SPS_fillArmTip01                    ← RUBBER_BOOT tip node
+    │   └── (repeat pattern for additional arms: Centre02, Upper02, Lower02 etc.)
+    │
+    ├── pumpControls (TransformGroup)
+    │   └── tsa_vis (TransformGroup)            ← visual anchor for pump HUD
+    │
+    └── pipeCouplers (TransformGroup)
+        ├── SPS_pipeCoupler01
+        │   └── SPS_pipeCoupler01Arcs
+        │       ├── SPS_pipeCoupler01Arc01      ← arc detection node left
+        │       └── SPS_pipeCoupler01Arc02      ← arc detection node right
+        ├── SPS_pipeCoupler02
+        │   └── SPS_pipeCoupler02Arcs
+        │       ├── SPS_pipeCoupler02Arc01
+        │       └── SPS_pipeCoupler02Arc02
+        └── (repeat pattern for SPS_pipeCoupler03 etc. if required)
+
+    ── NODE PLACEMENT RULES ──────────────────────────────────────────────────
+
+    SPS_pipeCouplerXX
+        Place at the physical centre of the coupling mouth.
+        Rotation: local Z-axis pointing outward away from the barrel.
+
+    SPS_pipeCouplerXXArc01 / Arc02
+        Place symmetrically either side of the coupler mouth:
+            1.5m left and right in local X, 2.5m forward in local Z.
+        These two nodes define the arc detection triangle used to detect
+        whether a pipe end is close enough and angled correctly to connect.
+
+    SPS_fillArmCentre
+        Place at the nozzle tip centre.
+        Used to determine the XZ position for slurry surface height sampling.
+
+    SPS_fillArmUpper
+        Place 0.3–0.5m above the nozzle tip.
+        Must enter the store fill volume (trigger box) for connection to register.
 
-**Oscar Mods — Farming Simulator 2025**
+    SPS_fillArmLower
+        Place at or below the nozzle tip.
+        Must be below the current slurry surface Y for flow to begin.
+        If the surface drops below this node, flow stops automatically.
 
-Replaces the vanilla drive-in trigger slurry filling system with a realistic physical pipe and connection system. Tankers must physically position fill arms over slurry pits, connect strap pipes between vehicles and stores, or use a PTO-driven conduit pump to move slurry between two points. No drive-in triggers. No automatic filling.
+    SPS_fillArmTip
+        RUBBER_BOOT and RUBBER_BOOT_PIT arms only.
+        Place exactly at the nozzle tip.
+        Used for proximity and angle checks against the rubber boot port nodes.
 
----
+    effectNode / effect / pipeEffectSmoke
+        Place at the point where slurry visually discharges.
+        The PipeEffect streams from this node toward the slurry surface.
+        pipeEffectSmoke is repositioned dynamically as stream length changes.
 
-## Contents
+    SPS_rubberBootLower / SPS_rubberBootUpper
+        Place at the lower and upper bounds of the rubber boot opening on the vehicle.
+        A fill arm tip must fall between these two Y positions, within XZ proximity,
+        for the arm to be considered docked into the boot.
 
-- [How It Works](#how-it-works)
-- [Controls](#controls)
-- [Fill Arm — Loading from a Store](#fill-arm--loading-from-a-store)
-- [Fill Arm — Tanker to Tanker](#fill-arm--tanker-to-tanker)
-- [Strap Pipe — Loading from a Store](#strap-pipe--loading-from-a-store)
-- [Strap Pipe — Discharging (Pumped)](#strap-pipe--discharging-pumped)
-- [Strap Pipe — Discharging (Gravity)](#strap-pipe--discharging-gravity)
-- [Nurse Tank (FRC65) — Fill Arm Loading](#nurse-tank-frc65--fill-arm-loading)
-- [Nurse Tank (FRC65) — Pipe Connection](#nurse-tank-frc65--pipe-connection)
-- [Conduit Pump](#conduit-pump)
-- [Universal Rules](#universal-rules)
-- [Setting Up a Vehicle Config](#setting-up-a-vehicle-config)
-- [Setting Up a Placeable Config](#setting-up-a-placeable-config)
-- [Save Data](#save-data)
-- [Debug Mode](#debug-mode)
+    rearControlNode
+        Place at the rear of the vehicle where the player stands to access
+        the walkaround pump control (selfPowered vehicles only).
 
----
+    ======================================================================== -->
 
-## How It Works
 
-SPS is driven by a single global manager (`g_slurryPipeManager`) that registers vehicles and placeables, tracks connections, controls flow sessions, and syncs state across multiplayer via server-authoritative events.
+    <!-- ========================================================================
+         cylinderedConfigIndex
+    =========================================================================
 
-There are no specialization files. The mod hooks directly into vanilla vehicle types using `SpecializationUtil.registerOverwrittenFunction` and overrides `Vehicle:onFinishedLoading`, `Vehicle:registerActionEvents`, `Placeable:finalizePlacement`, and `Placeable:delete`.
+    FS25 vehicles with multiple arm/pipe configurations use the Cylindered
+    specialization. The index maps to the active configuration slot (0-based):
 
-Each registered vehicle has a state table tracking pump running, valve open, flow direction, and spreader valve open. State changes are sent to all clients via custom events.
+        0 = first configuration  (default/folded state)
+        1 = second configuration (e.g. arm extended, couplings deployed)
+        2 = third configuration  etc.
 
-Vanilla drive-in trigger filling (`ManureBarrel:getAllowLoadTriggerActivation`) is blocked by SPS unless a valid physical connection is confirmed by the manager.
+    Only elements whose cylinderedConfigIndex matches the vehicle's currently
+    active configuration are registered and active. Elements without this
+    attribute are always registered regardless of configuration state.
 
----
+    Omit cylinderedConfigIndex entirely if the vehicle has only one configuration.
 
-## Controls
+    ======================================================================== -->
 
-All actions are registered as rebindable inputs in `modDesc.xml`.
 
-| Action | Default | Description |
-|---|---|---|
-| `SPS_TOGGLE_PUMP` | Replaces PTO key | Pump on / off |
-| `SPS_TOGGLE_FLOW` | Configurable | Open / close valve |
-| `SPS_TOGGLE_DIRECTION` | Configurable | Switch fill / discharge direction |
-| `SPS_TOGGLE_SPREADER` | Configurable | Open / close spreader valve (spreader vehicles only) |
-| Activate (long press R) | R | Connect pipe / open valve at coupling / deploy coupling |
+    <!-- ========================================================================
+         VEHICLE fillPoints.xml — ELEMENT REFERENCE
+    =========================================================================
 
-All SPS actions fire regardless of fold state or implement power state. Motor and PTO checks are performed manually inside the callbacks where relevant.
+    ── <nodeTree> ────────────────────────────────────────────────────────────
 
----
-
-## Fill Arm — Loading from a Store
-
-1. Drive tanker to the slurry store and position alongside.
-2. Remain in the cab.
-3. Use joystick axes to swing the fill arm out and lower the nozzle toward the pit.
-4. The arm has two detection nodes — **upper** and **lower**.
-   - Upper node must enter the store's fill volume detection zone (round or rectangle).
-   - Lower node must be below the current slurry surface Y.
-   - Both conditions must be true for flow to begin.
-5. Press **Pump ON** — PTO engages, engine load increases.
-6. Press **Flow OPEN** — slurry loads into the tanker.
-7. If the surface drops below the lower node, flow stops automatically. Lower the arm further to resume.
-8. When full: press **Flow CLOSE**, then **Pump OFF**.
-9. Raise and stow the arm.
-
----
-
-## Fill Arm — Tanker to Tanker
-
-1. Position tanker A (with fill arm) alongside tanker B (with receiver cup).
-2. Remain in cab of tanker A.
-3. Swing the arm and lower the nozzle toward tanker B's receiver cup node.
-4. Detection checks proximity AND alignment angle to the receiver cup.
-5. Press **Pump ON** on tanker A.
-6. Press **Direction** to set **DISCHARGE** (pump out of A into B).
-7. Press **Flow OPEN** — slurry transfers from A to B.
-8. If the arm moves out of alignment tolerance, flow stops automatically.
-9. Press **Flow CLOSE**, then **Pump OFF**.
-10. Raise and stow the arm.
-
----
-
-## Strap Pipe — Loading from a Store
-
-1. Park tanker within pipe length of the store inlet coupling. Maximum pipe length is defined per vehicle in its `fillPoints.xml`.
-2. Press **Pump ON** in the cab — PTO engages.
-3. Exit the cab and walk to the tanker pipe coupling point.
-4. When within range a proximity activatable appears. Press **Activate** — the pipe visual appears and both ends snap into place automatically.
-5. Flow begins automatically because the pump is already on.
-6. Return to the cab.
-7. Press **Flow CLOSE**, then **Pump OFF** to stop.
-8. Exit the cab, walk to the pipe, press **Activate** to disconnect.
-
----
-
-## Strap Pipe — Discharging (Pumped)
-
-1. Park tanker within pipe length of the destination inlet.
-2. Press **Pump ON** in the cab.
-3. Press **Direction** to set **DISCHARGE**.
-4. Exit the cab and walk to the tanker pipe coupling point.
-5. Press **Activate** to connect — flow begins automatically.
-6. Return to the cab.
-7. Press **Flow CLOSE**, then **Pump OFF** to stop.
-8. Exit cab, press **Activate** to disconnect.
-
----
-
-## Strap Pipe — Discharging (Gravity)
-
-Pump is **not required** for gravity discharge.
-
-1. Position tanker above or alongside the destination.
-2. Press **Direction** to set **DISCHARGE** (pump remains off).
-3. Exit cab and walk to the tanker pipe coupling point.
-4. Press **Activate** to connect.
-5. Press **Flow OPEN** — gravity pulls slurry out. No engine load increase.
-6. Press **Flow CLOSE** to stop.
-7. Exit cab and disconnect.
-
----
-
-## Nurse Tank (FRC65) — Fill Arm Loading
-
-The FRC65 is a passive vessel with no pump of its own.
-
-1. Position the working tanker so its fill arm can reach the open top of the FRC65.
-2. Lower the arm — the arm lower node must be below the FRC65 slurry surface Y. Surface is detected from the FRC65 fill volume using `getFillPlaneHeightAtLocalPos`.
-3. Press **Pump ON** on the working tanker.
-4. Press **Direction** to **DISCHARGE**.
-5. Press **Flow OPEN** — slurry pumps from tanker into FRC65.
-6. FRC65 fill level and surface rise as it fills.
-7. Press **Flow CLOSE**, then **Pump OFF** when done.
-
----
-
-## Nurse Tank (FRC65) — Pipe Connection
-
-1. Park working tanker alongside FRC65 within pipe length.
-2. Press **Pump ON** in the cab.
-3. Press **Direction** to **FILL** (pull from FRC65).
-4. Exit cab and walk to the FRC65 pipe outlet coupling.
-5. Press **Activate** to connect — flow begins from FRC65 into the tanker.
-6. If either vehicle moves beyond max pipe length, the pipe disconnects automatically. Pump keeps running.
-7. Press **Flow CLOSE**, then **Pump OFF** to stop.
-8. Exit cab, press **Activate** to disconnect.
-
----
-
-## Conduit Pump
-
-The conduit pump (e.g. PTO Slurry Pump) is a pass-through implement — it has no fill unit of its own. Slurry moves directly between two connected couplings.
-
-- Attach to a tractor via PTO.
-- Connect a strap pipe to **coupling A** (one side) and another to **coupling B** (the other side).
-- Both couplings must be connected for flow to occur.
-- Press **Pump ON** in the tractor cab.
-- Press **Direction** to set which way slurry flows (A→B or B→A).
-- Press **Flow OPEN** — slurry transfers between the two connected sources.
-
-A HUD panel appears in the cab showing **FROM** and **TO** vehicle or store names with current fill levels.
-
-The conduit respects `flowDirection` restrictions on connected store couplings — a `DISCHARGE`-only store coupling will block reverse flow even if the direction is set incorrectly.
-
----
-
-## Universal Rules
-
-- **Pump OFF = no flow** (except gravity discharge which requires no pump).
-- **No valid connection = no flow** regardless of pump state.
-- **Connection lost mid-flow = flow stops immediately.** Pump keeps running.
-- **Vanilla filling is blocked** by SPS unless a valid physical connection is confirmed.
-- **Flow direction can only be changed when the valve is closed.**
-- Pump state, valve state, direction, and connection state are all server-authoritative and synced to all clients.
-- Each vehicle's maximum pipe length is defined individually in its `fillPoints.xml`.
-
----
-
-## Setting Up a Vehicle Config
-
-### Folder Structure
-
-```
-configs/
-└── vehicleConfigs/
-    └── <vehicleName>/
-        ├── fillPoints.xml
-        └── nodeTree.i3d
-```
-
-The folder name must exactly match the vehicle's i3d filename without extension. The manager scans this at load time.
-
-**Exception:** Conduit pump vehicles (`conduit="true"`) have their coupling nodes authored directly in the vehicle i3d. No `nodeTree.i3d` is needed and the `<nodeTree>` element must be omitted.
-
----
-
-### nodeTree.i3d Structure
-
-All SPS nodes for a vehicle live in a separate `nodeTree.i3d` loaded at runtime via `loadI3DFile`. Do **not** use `cloneSharedI3DNode` — cloning breaks skin bindings.
-
-```
-nodeTree root (TransformGroup)
-│
-├── effectNode (TransformGroup)
-│   └── effect (TransformGroup)             ← PipeEffect shape node
-│       └── pipeEffectSmoke (TransformGroup) ← smoke/particle emitter
-│
-├── fillArms (TransformGroup)
-│   ├── SPS_fillArmCentre01                 ← OPEN_PIT nozzle centre
-│   ├── SPS_fillArmUpper01                  ← OPEN_PIT upper detection
-│   ├── SPS_fillArmLower01                  ← OPEN_PIT lower detection
-│   ├── SPS_fillArmTip01                    ← RUBBER_BOOT tip node
-│   └── (repeat for additional arms)
-│
-├── pumpControls (TransformGroup)
-│   └── tsa_vis (TransformGroup)            ← visual anchor for walkaround HUD
-│
-└── pipeCouplers (TransformGroup)
-    ├── SPS_pipeCoupler01
-    │   └── SPS_pipeCoupler01Arcs
-    │       ├── SPS_pipeCoupler01Arc01      ← arc detection node left
-    │       └── SPS_pipeCoupler01Arc02      ← arc detection node right
-    └── SPS_pipeCoupler02
-        └── SPS_pipeCoupler02Arcs
-            ├── SPS_pipeCoupler02Arc01
-            └── SPS_pipeCoupler02Arc02
-```
-
-#### Node Placement Rules
-
-| Node | Placement |
-|---|---|
-| `SPS_pipeCouplerXX` | Centre of coupling mouth. Local Z-axis pointing outward away from barrel. |
-| `SPS_pipeCouplerXXArc01/02` | 1.5m left and right in local X, 2.5m forward in local Z from coupler. |
-| `SPS_fillArmCentre` | Nozzle tip centre — used for XZ surface sampling. |
-| `SPS_fillArmUpper` | 0.3–0.5m above nozzle tip — must enter store fill volume. |
-| `SPS_fillArmLower` | At or below nozzle tip — must be below slurry surface Y for flow. |
-| `SPS_fillArmTip` | Exactly at nozzle tip — used for RUBBER_BOOT proximity and angle checks. |
-| `effectNode / effect / pipeEffectSmoke` | At the point where slurry visually discharges. |
-
----
-
-### fillPoints.xml Reference
-
-```xml
-<slurryPipeSystem>
-
-    <!-- Path to nodeTree.i3d relative to this file. Omit for conduit vehicles. -->
     <nodeTree filename="nodeTree.i3d"/>
 
-    <!-- Transfer rate in litres per second -->
-    <flow litersPerSecond="1000"/>
+    filename    Path to the nodeTree i3d relative to this fillPoints.xml.
+                Omit this element entirely for conduit vehicles (PTO Slurry Pump)
+                whose SPS nodes live directly in the vehicle i3d.
 
-    <!-- selfPowered: vehicle has its own pump, no tractor PTO required.
-         conduit: pass-through pump, no fill unit, two couplings required. -->
-    <pump selfPowered="false" conduit="false"/>
+    ── <flow> ────────────────────────────────────────────────────────────────
 
-    <!-- Optional looping pump sound for selfPowered vehicles only -->
+    <flow litersPerSecond="N"/>
+
+    litersPerSecond     Base transfer rate in litres per second at full pump speed.
+                        Typical range: 500–2000.
+                        Applies to all fill arms and pipe coupling transfers.
+
+    ── <pump> ────────────────────────────────────────────────────────────────
+
+    <pump selfPowered="bool" conduit="bool"/>
+
+    selfPowered="true"  Vehicle has its own pump independent of PTO.
+                        Used for self-propelled or electric-pump trailers (e.g. TSA).
+                        Pump on/off toggle is available via the walkaround
+                        pumpControl activatable at the rear of the vehicle.
+
+    conduit="true"      Vehicle is a pass-through pump (e.g. PTO Slurry Pump).
+                        No fill unit — slurry moves directly between two couplings.
+                        Direction is set from the cab. Either coupling can be
+                        inlet or outlet — the pump has no fixed side.
+                        flowDirection restrictions on connected store couplings
+                        are still respected and will block incorrect flow.
+                        Pipe chains cannot be laid FROM conduit pump couplings —
+                        pipes must be connected TO them.
+
+    Omit <pump/> entirely for standard PTO-driven tankers with no special pump behaviour.
+
+    ── <sounds> ──────────────────────────────────────────────────────────────
+
     <sounds>
         <engineLoop
-            file="$data/sounds/somePumpSound.gls"
-            linkNode="nodeInVehicleHierarchy"
-            innerRadius="5"
-            outerRadius="20"
+            file="..."
+            linkNode="..."
+            innerRadius="N"
+            outerRadius="N"
         />
     </sounds>
 
-    <!-- Fill arms. Leave self-closing if none. -->
+    file            Path to a .gls sound file. $data/ paths are valid.
+    linkNode        Node name in the vehicle hierarchy to attach the sound source to.
+    innerRadius     Distance in metres at which the sound plays at full volume.
+    outerRadius     Distance in metres at which the sound fades to silence.
+
+    Provides a looping pump/engine sound for selfPowered vehicles.
+    Omit the <sounds> block entirely for PTO-driven vehicles.
+
+    ── <fillArms> ────────────────────────────────────────────────────────────
+
     <fillArms>
         <fillArm
-            id="1"
-            cylinderedConfigIndex="1"
-            tipType="OPEN_PIT"
-            centreNodeName="SPS_fillArmCentre01"
-            upperNodeName="SPS_fillArmUpper01"
-            lowerNodeName="SPS_fillArmLower01"
-            fillUnitIndex="1"
+            id="N"
+            cylinderedConfigIndex="N"
+            tipType="OPEN_PIT|RUBBER_BOOT|RUBBER_BOOT_PIT"
+            centreNodeName="..."
+            upperNodeName="..."
+            lowerNodeName="..."
+            tipNodeName="..."
+            fillUnitIndex="N"
         >
-            <!-- Effects block is optional. Omit to auto-detect from nodeTree. -->
             <effects>
-                <effectNode
-                    effectClass="PipeEffect"
-                    effectNode="effect"
-                    materialType="pipe"
-                    maxBending="0.4"
-                    extraDistance="0.3"
-                    positionUpdateNodes="pipeEffectSmoke"
-                />
-                <effectNode
-                    effectNode="pipeEffectSmoke"
-                    materialType="unloadingSmoke"
-                    delay="0.5"
-                    alignToWorldY="true"
-                />
+                <effectNode ... />
             </effects>
         </fillArm>
     </fillArms>
 
-    <!-- Pipe couplings. Leave self-closing if none. -->
+    id                      Unique integer ID for this arm within the vehicle.
+
+    cylinderedConfigIndex   Active Cylindered config slot (0-based). Omit if N/A.
+
+    tipType
+        OPEN_PIT            Arm dips into an open slurry pit or store surface.
+                            Requires: centreNodeName, upperNodeName, lowerNodeName.
+                            Upper node must enter the store fill volume trigger.
+                            Lower node must be below the slurry surface Y for flow.
+
+        RUBBER_BOOT         Arm nozzle docks physically into a rubber boot port
+                            on a building or placeable.
+                            Requires: tipNodeName.
+                            Connection confirmed by proximity and angle to boot nodes.
+
+        RUBBER_BOOT_PIT     Combines RUBBER_BOOT physical docking with OPEN_PIT
+                            surface detection. Used for enclosed inlet ports that
+                            also have a visible slurry surface below.
+                            Requires: tipNodeName, centreNodeName, upperNodeName, lowerNodeName.
+
+    centreNodeName          Node at nozzle centre for XZ surface sampling (OPEN_PIT).
+    upperNodeName           Node above nozzle — enters store fill volume (OPEN_PIT).
+    lowerNodeName           Node at nozzle tip — must be below surface Y (OPEN_PIT).
+    tipNodeName             Node at tip for proximity/angle docking check (RUBBER_BOOT).
+    fillUnitIndex           Vehicle fill unit to fill or discharge. Default: 1.
+
+    <effects> (optional child of <fillArm>)
+        Declares discharge effect nodes explicitly for this arm.
+        If omitted, the manager auto-detects from the nodeTree
+        effectNode > effect > pipeEffectSmoke hierarchy.
+        Use this block when the nodeTree does not follow the standard structure
+        or when per-arm effect configuration is required.
+
+        <effectNode
+            effectClass="PipeEffect"    Must be PipeEffect for slurry stream visuals.
+            effectNode="..."            Node name in the nodeTree for the PipeEffect shape.
+            materialType="pipe"         Material type key — use "pipe" for slurry.
+            maxBending="N.N"            Maximum pipe bending factor (0.0–1.0).
+            extraDistance="N.N"         Extra stream distance added to surface offset.
+            positionUpdateNodes="..."   Space-separated node names to reposition as
+                                        stream length updates (e.g. pipeEffectSmoke).
+        />
+        <effectNode
+            effectNode="..."            Node name of the secondary smoke/particle effect.
+            materialType="unloadingSmoke"
+            delay="N.N"                 Seconds before this effect starts after flow begins.
+            alignToWorldY="true"        Keeps the emitter aligned to world up axis.
+        />
+
+    Leave <fillArms/> self-closing if this vehicle has no fill arms.
+
+    ── <pipeCouplings> ───────────────────────────────────────────────────────
+
     <pipeCouplings>
         <pipeCoupling
-            id="1"
-            cylinderedConfigIndex="1"
-            mountNodeName="SPS_pipeCoupler01"
-            valveType="MANUAL"
-            maxPipeLength="6.0"
-            fillUnitIndex="1"
-            valveFromRearControl="false"
-        />
-        <pipeCoupling
-            id="2"
-            mountNodeName="SPS_pipeCoupler02"
-            valveType="HYDRAULIC"
-            maxPipeLength="6.0"
-            fillUnitIndex="1"
+            id="N"
+            cylinderedConfigIndex="N"
+            mountNodeName="..."
+            valveType="MANUAL|HYDRAULIC|NONE"
+            maxPipeLength="N.N"
+            fillUnitIndex="N"
+            valveFromRearControl="bool"
+            connector="male|female"
         />
     </pipeCouplings>
 
-    <!-- Rubber boot ports. Leave self-closing if none. -->
+    id                      Unique integer ID for this coupling within the vehicle.
+
+    cylinderedConfigIndex   Active Cylindered config slot (0-based). Omit if N/A.
+
+    mountNodeName           Node name of the coupling mount point in the nodeTree
+                            (or directly in the vehicle i3d for conduit vehicles).
+                            Arc detection nodes must exist as children named:
+                                <mountNodeName>Arcs
+                                    <mountNodeName>Arc01
+                                    <mountNodeName>Arc02
+
+    valveType
+        MANUAL              Valve is opened by the player standing at the coupling
+                            and using long press R. Standard for most tankers.
+                            Player is shown: Disconnect | Open valve (hold R).
+
+        HYDRAULIC           Valve is opened from the cab via SPS_TOGGLE_FLOW action.
+                            Used for conduit pumps and hydraulically controlled trailers.
+                            Player at the coupling is only offered disconnect — no valve
+                            prompts appear. Pipe chains cannot be laid from this coupling.
+
+        NONE                No valve. Flow begins immediately when connected and the
+                            pump is running. Use with valveFromRearControl="true".
+
+    maxPipeLength           Maximum distance in metres for a bez pipe or chain terminus
+                            to connect to this coupling. Typical: 4.0–8.0.
+
+    fillUnitIndex           Vehicle fill unit index. Default: 1.
+                            Not applicable for conduit vehicles — omit or leave at default.
+
+    valveFromRearControl    true = valve state is controlled by the rear pumpControl
+                            activatable rather than manually at the coupling.
+                            Pair with valveType="NONE" for self-powered trailers.
+
+    connector               Physical connector shape shown on the vehicle end of the
+                            bez pipe. Default: "male".
+                            Use "female" for tankers whose coupling socket is a female
+                            receiver rather than a male spigot.
+                            Chain pipe segments always use male at the start and female
+                            at the end regardless of this attribute — it only applies
+                            to the bez pipe connecting the tanker to the chain or store.
+
+    ── <rubberBootPorts> ─────────────────────────────────────────────────────
+
     <rubberBootPorts>
         <rubberBootPort
-            id="1"
-            lowerNodeName="SPS_rubberBootLower"
-            upperNodeName="SPS_rubberBootUpper"
-            valveType="NONE"
-            fillUnitIndex="1"
+            id="N"
+            lowerNodeName="..."
+            upperNodeName="..."
+            valveType="MANUAL|HYDRAULIC|NONE"
+            fillUnitIndex="N"
         />
     </rubberBootPorts>
 
-    <!-- Walkaround pump control activatable. Leave self-closing for cab-only vehicles. -->
+    id              Unique integer ID for this port.
+
+    lowerNodeName   Lower boundary node of the rubber boot docking zone.
+    upperNodeName   Upper boundary node of the rubber boot docking zone.
+                    A fill arm tip must fall between the Y positions of these
+                    two nodes, and within XZ proximity, for docking to register.
+
+    valveType       Controls how the port valve is opened.
+                    NONE = port is always open when an arm is docked.
+
+    fillUnitIndex   Vehicle fill unit index. Default: 1.
+
+    ── <pumpControls> ────────────────────────────────────────────────────────
+
     <pumpControls>
         <pumpControl
-            id="1"
-            nodeName="rearControlNode"
-            radius="1.5"
+            id="N"
+            nodeName="..."
+            radius="N.N"
         />
     </pumpControls>
 
-</slurryPipeSystem>
-```
+    id          Unique integer ID.
+    nodeName    Node name in the vehicle hierarchy where the walkaround pump
+                control activatable appears. The player must be within radius
+                of this node to see the pump/valve/direction controls.
+    radius      Activation radius in metres. Default: 1.5.
 
-#### Attribute Reference
+    Leave <pumpControls/> self-closing for vehicles that use in-cab controls only.
 
-**`<pump>`**
-| Attribute | Values | Description |
-|---|---|---|
-| `selfPowered` | `true/false` | Vehicle has own pump, no tractor PTO needed. |
-| `conduit` | `true/false` | Pass-through pump. No fill unit. Requires two couplings. |
+    ======================================================================== -->
 
-**`<fillArm>`**
-| Attribute | Description |
-|---|---|
-| `id` | Unique integer ID per arm. |
-| `cylinderedConfigIndex` | Cylindered config slot (0-based). Omit if vehicle has one config. |
-| `tipType` | `OPEN_PIT` / `RUBBER_BOOT` / `RUBBER_BOOT_PIT` |
-| `centreNodeName` | XZ sampling node (OPEN_PIT). |
-| `upperNodeName` | Must enter store fill volume (OPEN_PIT). |
-| `lowerNodeName` | Must be below surface Y for flow (OPEN_PIT). |
-| `tipNodeName` | Proximity/angle check node (RUBBER_BOOT). |
-| `fillUnitIndex` | Vehicle fill unit index. Default: 1. |
 
-**`<pipeCoupling>` (vehicle)**
-| Attribute | Description |
-|---|---|
-| `id` | Unique integer ID. |
-| `cylinderedConfigIndex` | Cylindered config slot. Omit if N/A. |
-| `mountNodeName` | Coupling mount node in nodeTree. |
-| `valveType` | `MANUAL` / `HYDRAULIC` / `NONE` |
-| `maxPipeLength` | Max connection distance in metres. |
-| `fillUnitIndex` | Vehicle fill unit. Default: 1. |
-| `valveFromRearControl` | `true` = valve controlled from rear pumpControl activatable. |
+    <!-- ========================================================================
+         PLACEABLE fillPoints.xml — ELEMENT REFERENCE
+    =========================================================================
 
-**valveType values:**
-- `MANUAL` — Player opens valve at the coupling using long press R.
-- `HYDRAULIC` — Valve opened from cab via `SPS_TOGGLE_FLOW`. No manual valve prompt at coupling.
-- `NONE` — No valve. Flow begins immediately when connected and pump is on.
+    Placeable fillPoints.xml files live in configs/placeableConfigs/<n>/
+    and are matched against loaded placeables by folder name.
 
-**`cylinderedConfigIndex`** maps to the Cylindered specialization config slot (0-based). Elements without this attribute are always active regardless of configuration state.
-
----
-
-## Setting Up a Placeable Config
-
-### Folder Structure
-
-```
-configs/
-└── placeableConfigs/
-    └── <placeableName>/
-        ├── fillPoints.xml
-        └── nodeTree.i3d
-```
-
-The folder name must match the placeable's config filename without extension. Matching is by substring, so a folder named `cowShedUK` matches both `cowShedUK` and `cowShedUK_nonMilk`. Use a separate subfolder for variants that require different configs.
-
----
-
-### nodeTree.i3d Structure
-
-```
-nodeTree root (TransformGroup)
-└── <containerName> (TransformGroup)     ← must match a node in the placeable i3d
-    ├── pipeCouplers (TransformGroup)
-    │   ├── SPS_pipeCoupler01
-    │   │   └── SPS_pipeCoupler01Arcs
-    │   │       ├── SPS_pipeCoupler01Arc01
-    │   │       └── SPS_pipeCoupler01Arc02
-    │   └── (repeat for additional couplings)
-    │
-    ├── fillPlaneNodes (TransformGroup)
-    │   ├── slurryPlaneCentre            ← centre of fill area (all shapes)
-    │   ├── slurryPlaneEdge              ← edge point — round shape only
-    │   ├── slurryPlaneCorner1           ← first corner — rectangle shape only
-    │   └── slurryPlaneCorner2           ← opposite corner — rectangle shape only
-    │
-    └── effects (TransformGroup)
-        └── effect (TransformGroup)      ← PipeEffect shape node
-            └── pipeEffectSmoke          ← smoke/particle emitter
-```
-
-The `<containerName>` TransformGroup name must match an existing node in the placeable's own component hierarchy. The manager parents the nodeTree root into that node at runtime.
-
-#### Node Placement Rules
-
-| Node | Placement |
-|---|---|
-| `SPS_pipeCouplerXX` | Centre of coupling mouth on the building wall. Local Z pointing outward. |
-| `SPS_pipeCouplerXXArc01/02` | 1.5m left and right in local X, 2.5m forward in local Z from coupler. |
-| `slurryPlaneCentre` | Ground level centre of the slurry pit or tank opening. |
-| `slurryPlaneEdge` | Edge of the circular pit at ground level — defines detection radius (round shape). |
-| `slurryPlaneCorner1/2` | Two diagonally opposite corners of the rectangular pit (rectangle shape). |
-| `effect / pipeEffectSmoke` | Physical inlet point where slurry enters the store. |
-
----
-
-### fillPoints.xml Reference
-
-```xml
-<slurryPipeSystem>
+    ── <nodeTree> ────────────────────────────────────────────────────────────
 
     <nodeTree filename="nodeTree.i3d"/>
 
-    <!-- Optional: rotate a node in the placeable i3d when a deployable coupling is deployed -->
-    <pipeAnimNode node="gateNode" rx="0" ry="90" rz="0"/>
+    Same as vehicle nodeTree. Contains the fill plane centre/edge/corner nodes,
+    hide nodes, hide collision nodes, and placeable coupler mount nodes.
 
-    <!-- Fill plane for arm detection and surface height -->
+    ── <fillPlane> ───────────────────────────────────────────────────────────
+
     <fillPlane
-        node="fillPlaneShapeNode"
-        minY="-2.5"
-        maxY="0.0"
-        fillType="LIQUIDMANURE"
-        shape="round"
-        centreNodeName="slurryPlaneCentre"
-        edgeNodeName="slurryPlaneEdge"
+        shape="round|rectangle"
+        centreNodeName="..."
+        edgeNodeName="..."
+        corner1NodeName="..."
+        corner2NodeName="..."
     />
 
-    <!-- For rectangular pits use shape="rectangle" with corners instead of edge:
-    <fillPlane
-        node="fillPlaneShapeNode"
-        minY="-2.5"
-        maxY="0.0"
-        fillType="LIQUIDMANURE"
-        shape="rectangle"
-        centreNodeName="slurryPlaneCentre"
-        corner1NodeName="slurryPlaneCorner1"
-        corner2NodeName="slurryPlaneCorner2"
-    />
-    -->
+    shape="round"           Circular detection zone.
+                            Requires: centreNodeName, edgeNodeName.
+                            centreNode = centre of the fill area.
+                            edgeNode   = any point on the edge — defines radius.
 
-    <!-- Store pipe couplings -->
-    <pipeCouplings>
-        <pipeCoupling
-            id="1"
-            mountNodeName="SPS_pipeCoupler01"
-            flowDirection="DISCHARGE"
-            valveType="NONE"
-            deployable="false"
-            maxPipeLength="6.0"
-        >
-            <!-- Optional visual inlet effect -->
-            <effects inletDistance="1.5">
-                <effectNode
-                    effectClass="PipeEffect"
-                    effectNode="effect"
-                    materialType="pipe"
-                    maxBending="0.4"
-                    extraDistance="0.3"
-                    positionUpdateNodes="pipeEffectSmoke"
-                />
-                <effectNode
-                    effectNode="pipeEffectSmoke"
-                    materialType="unloadingSmoke"
-                    startDelay="0.5"
-                    alignToWorldY="true"
-                />
-            </effects>
-        </pipeCoupling>
-    </pipeCouplings>
+    shape="rectangle"       Rectangular detection zone.
+                            Requires: centreNodeName, corner1NodeName, corner2NodeName.
+                            centreNode  = centre of the fill area.
+                            corner1Node = one corner of the rectangle.
+                            corner2Node = the diagonally opposite corner.
 
-    <!-- Nodes to hide in the placeable i3d when SPS is active -->
+    The fill plane is used to determine whether a fill arm upper node is inside
+    the store's fill volume, and to sample slurry surface height for lower node
+    detection. Nodes must be placed at ground level of the fill area.
+
+    ── <hideNodes> ───────────────────────────────────────────────────────────
+
     <hideNodes>
-        <node name="vanillaDriveInTriggerMesh"/>
-        <node name="vanillaFillTower"/>
+        <node name="..."/>
     </hideNodes>
 
-    <!-- Collision nodes to disable when SPS is active -->
+    Lists nodes in the placeable i3d to hide when SPS is active on this placeable.
+    Used to suppress vanilla drive-in trigger meshes that would clip with SPS geometry.
+
+    ── <hideCollisions> ──────────────────────────────────────────────────────
+
     <hideCollisions>
-        <node name="vanillaRampCollision"/>
+        <node name="..."/>
     </hideCollisions>
 
-</slurryPipeSystem>
-```
+    Lists collision nodes in the placeable i3d to disable when SPS is active.
+    Used to remove vanilla drive-in ramp collisions that block SPS vehicle access.
 
-#### Attribute Reference
+    ── <storeCouplings> ──────────────────────────────────────────────────────
 
-**`<fillPlane>`**
-| Attribute | Description |
-|---|---|
-| `node` | Engine-animated fill plane node in the placeable i3d. Engine moves its Y between minY and maxY as the store fills. |
-| `minY` | Local Y of fill plane node when store is empty. |
-| `maxY` | Local Y of fill plane node when store is full. |
-| `fillType` | Fill type string (e.g. `LIQUIDMANURE`). |
-| `shape` | `round` or `rectangle`. |
-| `centreNodeName` | Centre of fill area in nodeTree. |
-| `edgeNodeName` | Edge of circular area — round shape only. |
-| `corner1NodeName` | First corner — rectangle shape only. |
-| `corner2NodeName` | Opposite corner — rectangle shape only. |
+    <storeCouplings>
+        <pipeCoupling
+            id="N"
+            mountNodeName="..."
+            flowDirection="DISCHARGE|FILL|BOTH"
+            deployable="bool"
+            connector="male|female"
+            animNodeName="..."
+            animRX="N" animRY="N" animRZ="N"
+        >
+            <effects inletDistance="N.N">
+                <effectNode ... />
+            </effects>
+        </pipeCoupling>
+    </storeCouplings>
 
-**`<pipeCoupling>` (placeable)**
-| Attribute | Description |
-|---|---|
-| `id` | Unique integer ID. |
-| `mountNodeName` | Coupling mount node in nodeTree. |
-| `flowDirection` | `DISCHARGE` / `FILL` / `BOTH` |
-| `valveType` | `MANUAL` / `HYDRAULIC` / `NONE` |
-| `deployable` | `true` = hidden by default, player deploys via long press R. |
-| `maxPipeLength` | Max connection distance in metres. |
+    id              Unique integer ID for this store coupling.
 
-**flowDirection values:**
-- `DISCHARGE` — Slurry can only be pumped INTO this store.
-- `FILL` — Slurry can only be pulled OUT of this store.
-- `BOTH` — No restriction on direction.
+    mountNodeName   Node name in the nodeTree for the coupling mount point.
+                    Arc nodes must exist as children:
+                        <mountNodeName>Arcs
+                            <mountNodeName>Arc01
+                            <mountNodeName>Arc02
 
-**`<pipeAnimNode>`** — Rotates a node in the placeable i3d when a deployable coupling is deployed. `rx/ry/rz` are Euler degrees. SPS does not touch the rotation when the coupling is undeployed — vanilla animation controls it in that state.
+    flowDirection
+        DISCHARGE   Only allows slurry to be pumped INTO this store.
+                    Vehicles connecting to this coupling cannot pull slurry out.
+        FILL        Only allows slurry to be pulled OUT of this store.
+        BOTH        No restriction — flow in either direction is permitted.
 
-**`<hideNodes>`** — Nodes to hide in the placeable i3d when SPS is active. Use to suppress vanilla drive-in meshes or fill towers.
+    deployable      true = coupling is hidden by default and deployed by the
+                    player via long press R at the placeable.
+                    Useful for couplings that are only needed occasionally
+                    (e.g. cow shed pipe coupler hidden on the building wall).
 
-**`<hideCollisions>`** — Collision nodes to disable when SPS is active. Use to remove vanilla drive-in ramp collisions.
+    connector       Physical connector shape shown on the store end of the bez pipe.
+                    Default: "female".
+                    Only override if the store has an unusual coupling type that
+                    physically presents a male spigot rather than a female socket.
 
----
+    animNodeName    Node to rotate when the coupling is deployed/undeployed.
+    animRX/Y/Z      Euler rotation in degrees applied to animNode when deployed.
 
-## Surface Y Detection
+    <effects> (optional child)
+        Declares the visual inlet effect for flow arriving at this store coupling.
+        inletDistance   Stream length in metres from the pipe end to the store inlet.
+        <effectNode> attributes are identical to the vehicle fillArm effects block.
 
-Surface height is determined each tick:
+    ======================================================================== -->
 
-- **Placeable stores:** World Y is read directly from the engine-animated fill plane node via `getWorldTranslation`. The engine moves this node between `minY` (empty) and `maxY` (full) in local space.
-- **Vehicle fill volumes (nurse tanks):** `getFillPlaneHeightAtLocalPos` is called on the fill volume each tick, sampling at the arm centre node XZ position.
-
-Both paths feed the same unified surface detection function. When fill level reaches zero, surface Y equals `minY` — the arm lower node will always be above it and flow stops.
-
----
-
-## Save Data
-
-All connection state, pipe colour selections, and chain state are saved to:
-
-```
-savegame/FS25_SlurryPipeSystem.xml
-```
-
-This file is written automatically on every game save. Per-connection data saved includes coupling connections, deployed coupling states, chain pipe state, and selected pipe colour index.
-
----
-
-## Debug Mode
-
-Set `SlurryDebug.enabled = true` in `init.lua` to enable debug logging. This is hardcoded during development and should be set to `false` for release builds.
-
----
-
-## Mod Structure
-
-```
-FS25_SlurryPipeSystem/
-├── modDesc.xml
-├── scripts/
-│   ├── manager/
-│   │   └── SlurryPipeManager.lua
-│   ├── specializations/
-│   │   ├── SlurryFillArm.lua
-│   │   ├── SlurryPump.lua
-│   │   ├── SlurryFlowValve.lua
-│   │   ├── SlurryPipeCoupling.lua
-│   │   ├── SlurryReceiver.lua
-│   │   └── events/
-│   │       ├── SlurryPumpStateEvent.lua
-│   │       ├── SlurryFlowStateEvent.lua
-│   │       ├── SlurryFlowDirectionEvent.lua
-│   │       ├── SlurryPipeConnectEvent.lua
-│   │       └── SlurryPipeDisconnectEvent.lua
-│   ├── overrides/
-│   │   └── ManureBarrelOverride.lua
-│   └── util/
-│       ├── SlurryNodeUtil.lua
-│       └── SlurryDebug.lua
-├── vehicleConfigs/
-│   ├── kaweco_profi2/fillPoints.xml
-│   ├── samsonAgro_pgII28Genesis/fillPoints.xml
-│   └── kotte_frc65/fillPoints.xml
-├── placeableConfigs/
-│   └── baseTank/fillPoints.xml
-├── i3d/
-│   ├── nodes/spsPivot.i3d
-│   └── pipes/strapPipe.i3d
-└── l10n/
-    └── l10n_en.xml
-```
-
----
-
-## Author
-
-Oscar Mods
+</slurryPipeSystemReference>
