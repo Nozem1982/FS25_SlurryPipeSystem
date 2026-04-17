@@ -32,6 +32,7 @@
             valveType="NONE"
             deployable="true"
             maxPipeLength="4.0"
+			connector="male"
         />
  
     </pipeCouplings>

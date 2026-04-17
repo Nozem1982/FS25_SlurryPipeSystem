@@ -539,6 +539,7 @@ function SlurryPipeManager:registerVehicle(vehicle)
                 maxPipeLength       = xmlFile:getFloat(cKey .. "#maxPipeLength", 6.0),
                 fillUnitIndex       = xmlFile:getInt(cKey .. "#fillUnitIndex", 1),
                 valveFromRearControl = xmlFile:getBool(cKey .. "#valveFromRearControl", false),
+                connectorType       = xmlFile:getString(cKey .. "#connector", "male"),
                 isConnected         = false,
                 connectedTarget     = nil,
                 sourceEntry         = nil,
@@ -993,6 +994,7 @@ function SlurryPipeManager:registerPlaceable(placeable)
                 arcNode         = arcNode,
                 valveType       = xmlFile:getString(cKey .. "#valveType", SPS_VALVE_TYPE_MANUAL),
                 flowDirection   = xmlFile:getString(cKey .. "#flowDirection", "BOTH"),
+                connectorType   = xmlFile:getString(cKey .. "#connector", "female"),
                 isConnected     = false,
                 valveOpen       = false,
                 connectedTarget = nil,
@@ -2246,7 +2248,8 @@ function SlurryPipeManager:applyConnectCouplings(couplingA, couplingB, ownerA, o
             local segs = couplingB.chain.segments
             if #segs > 0 then nodeB = segs[#segs].endConnectors end
         end
-        local inst = g_spsPipeVisual:createPipe(nodeA, nodeB)
+        local startConnType = (couplingA.connectorType ~= nil) and couplingA.connectorType or "male"
+        local inst = g_spsPipeVisual:createPipe(nodeA, nodeB, startConnType)
         if inst ~= nil then
             local pipeId = self._nextPipeId
             self._nextPipeId = self._nextPipeId + 1
@@ -2254,12 +2257,22 @@ function SlurryPipeManager:applyConnectCouplings(couplingA, couplingB, ownerA, o
             local cg = self.currentPipeColor.g
             local cb = self.currentPipeColor.b
             g_spsPipeVisual:applyColor(inst, cr, cg, cb)
-            -- Chain start end needs female connector (child 0) shown, male (child 1) hidden
+            -- Bez pipe end connector visibility:
+            -- Chain start (detNode04) = female receiver -> connectorEnd shows female02 (child 0)
+            -- Chain far end (terminus) = female -> bez meets it with male -> connectorEnd shows male02 (child 1)
+            -- Chain start as connectorStart: show female01 (chain start is female)
             if couplingB.isChainStart and inst.connectorEnd ~= nil then
+                inst.connectorEndFlipped = true
                 local femaleConn = getChildAt(inst.connectorEnd, 0)
                 local maleConn   = getChildAt(inst.connectorEnd, 1)
                 if femaleConn ~= nil and femaleConn ~= 0 then setVisibility(femaleConn, true) end
                 if maleConn   ~= nil and maleConn   ~= 0 then setVisibility(maleConn, false) end
+            elseif couplingB.isChainTerminus and not couplingB.isChainStart and inst.connectorEnd ~= nil then
+                -- Chain far end is female — bez end connecting to it uses male02
+                local femaleConn = getChildAt(inst.connectorEnd, 0)
+                local maleConn   = getChildAt(inst.connectorEnd, 1)
+                if femaleConn ~= nil and femaleConn ~= 0 then setVisibility(femaleConn, false) end
+                if maleConn   ~= nil and maleConn   ~= 0 then setVisibility(maleConn, true) end
             elseif couplingA.isChainStart and inst.connectorStart ~= nil then
                 local femaleConn = getChildAt(inst.connectorStart, 0)
                 local maleConn   = getChildAt(inst.connectorStart, 1)

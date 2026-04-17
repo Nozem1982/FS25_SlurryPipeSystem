@@ -55,6 +55,7 @@
             maxPipeLength="4.0"
             fillUnitIndex="1"
             valveFromRearControl="false"
+			connector="male"
         />
 
         <pipeCoupling
@@ -65,6 +66,7 @@
             maxPipeLength="4.0"
             fillUnitIndex="1"
             valveFromRearControl="false"
+			connector="male"
         />
 
         <pipeCoupling
@@ -75,6 +77,7 @@
             maxPipeLength="4.0"
             fillUnitIndex="1"
             valveFromRearControl="false"
+			connector="male"
         />
 
         <pipeCoupling
@@ -85,6 +88,7 @@
             maxPipeLength="4.0"
             fillUnitIndex="1"
             valveFromRearControl="false"
+			connector="male"
         />
 
     </pipeCouplings>

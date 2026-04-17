@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Kaweco Profi2 -->
+<!-- Kotte PQ32000 -->
 
 <!-- FS25_SlurryPipeSystem — Vehicle fillPoints.xml -->
 <!-- Author: Oscar Mods -->
@@ -15,17 +15,11 @@
 
         <fillArm
             id="1"
-            tipType="OPEN_PIT"
-            centreNodeName="SPS_fillArmCentre01"
+            cylinderedConfigIndex="1"
+            tipType="RUBBER_BOOT"
+            tipNodeName="SPS_fillArmTip01"
             fillUnitIndex="1"
-        >
-            <effects>
-                <effectNode effectClass="PipeEffect" effectNode="effect" materialType="pipe"
-                            maxBending="0.8" extraDistance="0.1" positionUpdateNodes="pipeEffectSmoke"/>
-                <effectNode effectNode="pipeEffectSmoke" materialType="unloadingSmoke"
-                            delay="0.1" alignToWorldY="true"/>
-            </effects>
-        </fillArm>
+        />
 
     </fillArms>
 

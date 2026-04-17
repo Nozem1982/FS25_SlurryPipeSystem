@@ -18,6 +18,7 @@
             mountNodeName="SPS_pipeCoupler01"
             valveType="HYDRAULIC"
             maxPipeLength="4.0"
+			connector="male"
         />
 
         <pipeCoupling
@@ -25,6 +26,7 @@
             mountNodeName="SPS_pipeCoupler02"
             valveType="HYDRAULIC"
             maxPipeLength="4.0"
+			connector="male"
         />
 
     </pipeCouplings>

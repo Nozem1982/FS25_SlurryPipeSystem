@@ -26,6 +26,7 @@
             valveType="MANUAL"
 			deployable="false"
             maxPipeLength="4.0"
+			connector="male"
         >
             <effects inletDistance="10.0">
                 <effectNode effectClass="PipeEffect" effectNode="effect" materialType="pipe"
@@ -42,6 +43,7 @@
             valveType="MANUAL"
 			deployable="false"
             maxPipeLength="4.0"
+			connector="male"
         />
  
     </pipeCouplings>

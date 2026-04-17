@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Kotte TSA -->
+<!-- Zunhammer ULT18 -->
 
 <!-- FS25_SlurryPipeSystem — Vehicle fillPoints.xml -->
 <!-- Author: Oscar Mods -->
@@ -11,17 +11,10 @@
 
     <flow litersPerSecond="2000"/>
 
-    <pump selfPowered="true"/>
+    <pump selfPowered="false"/>
 
-    <sounds>
-        <engineLoop
-            file="$data/vehicles/agi/utx44/sounds/utx44_loop.gls"
-            linkNode="dischargeNode"
-            innerRadius="10"
-            outerRadius="80"
-        />
-    </sounds>
-
+    <sounds/>
+   
     <fillArms/>
 
     <pipeCouplings>
@@ -29,11 +22,11 @@
         <pipeCoupling
             id="1"
             mountNodeName="SPS_pipeCoupler01"
-            valveType="NONE"
+            valveType="MANUAL"
             maxPipeLength="4.0"
             fillUnitIndex="1"
-            valveFromRearControl="true"
-			connector="male"
+            valveFromRearControl="false"
+			connector="female"
         />
 
     </pipeCouplings>
@@ -50,14 +43,6 @@
 
     </rubberBootPorts>
 
-    <pumpControls>
-
-        <pumpControl
-            id="1"
-            nodeName="rearControlNode"
-            radius="1.5"
-        />
-
-    </pumpControls>
+    <pumpControls/>
 
 </slurryPipeSystem>

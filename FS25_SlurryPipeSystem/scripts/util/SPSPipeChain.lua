@@ -190,24 +190,39 @@ function SPSPipeChain:_loadPipe(startX, startY, startZ, startRY, colorR, colorG,
     local endConnectors = getChildAt(pipeRoot, 15)
     local detNode01     = getChildAt(endConnectors, 5)
     local endFloorLevel = getChildAt(endConnectors, 6)
-    local maleConn      = getChildAt(endConnectors, 0)
-    local femaleConn    = getChildAt(endConnectors, 1)
+    -- endConnectors: child 0=female02, child 1=male02
+    local femaleConn    = getChildAt(endConnectors, 0)
+    local maleConn      = getChildAt(endConnectors, 1)
     local detNode04     = getChildAt(pipeRoot, 16)  -- chain start detection node (detectionNode04)
 
-    local midBones = {}
-    for i = 2, 14 do
-        local cj   = getChildAt(pipeRoot, i)
-        local bone = getChildAt(cj, 0)
-        midBones[i - 1] = bone
+    -- Collect all 17 bones for bezier driving.
+    -- Bone1, Bone2: inside slurryPipeConnectors (pipeRoot child 1), children 2 and 3
+    -- Bone3-Bone15: pipeRoot children 2-14, each child 0
+    -- Bone16, Bone17: inside endConnectors (pipeRoot child 15), children 2 and 3
+    local connectorStartNode = getChildAt(pipeRoot, 1)
+    local allBones = {}
+    allBones[1]  = getChildAt(getChildAt(connectorStartNode, 2), 0)  -- Bone1
+    allBones[2]  = getChildAt(getChildAt(connectorStartNode, 3), 0)  -- Bone2
+    for i = 3, 15 do
+        local cj = getChildAt(pipeRoot, i - 1)
+        allBones[i] = getChildAt(cj, 0)
     end
+    allBones[16] = getChildAt(getChildAt(endConnectors, 2), 0)  -- Bone16
+    allBones[17] = getChildAt(getChildAt(endConnectors, 3), 0)  -- Bone17
 
     link(getRootNode(), pipeRoot)
     setWorldTranslation(pipeRoot, startX, startY, startZ)
     setWorldRotation(pipeRoot, 0, startRY, 0)
     delete(i3dRoot)
 
-    if maleConn   ~= nil and maleConn   ~= 0 then setVisibility(maleConn,   true)  end
-    if femaleConn ~= nil and femaleConn ~= 0 then setVisibility(femaleConn, false) end
+    -- Chain segment: start = male connector, end = female connector (always)
+    local connStart    = getChildAt(pipeRoot, 1)   -- slurryPipeConnectors
+    local femaleStart  = getChildAt(connStart, 0)  -- female01
+    local maleStart    = getChildAt(connStart, 1)  -- male01
+    if femaleStart ~= nil and femaleStart ~= 0 then setVisibility(femaleStart, false) end
+    if maleStart   ~= nil and maleStart   ~= 0 then setVisibility(maleStart,   true)  end
+    if femaleConn  ~= nil and femaleConn  ~= 0 then setVisibility(femaleConn,  true)  end
+    if maleConn    ~= nil and maleConn    ~= 0 then setVisibility(maleConn,    false) end
 
     -- Apply pipe colour to hose mesh (pipeRoot child 0)
     local cr = colorR or (g_slurryPipeManager and g_slurryPipeManager.currentPipeColor.r or 0)
@@ -242,7 +257,7 @@ function SPSPipeChain:_loadPipe(startX, startY, startZ, startRY, colorR, colorG,
         detNode01     = detNode01,
         detNode04     = detNode04,
         endFloorLevel = endFloorLevel,
-        midBones      = midBones,
+        allBones      = allBones,
         chainCoupling = chainCoupling,
         activatable   = nil,
         startX        = startX,
@@ -319,11 +334,11 @@ function SPSPipeChain:_updateBezierBones(seg)
     local p2y = p3y + backY * tension
     local p2z = p3z + backZ * tension
 
-    local NUM = 13
+    local NUM = 17
     for i = 1, NUM do
-        local bone = seg.midBones[i]
+        local bone = seg.allBones[i]
         if bone ~= nil and bone ~= 0 then
-            local t   = i / (NUM + 1)
+            local t   = (i - 1) / (NUM - 1)
             local mt  = 1 - t
             local mt2 = mt * mt
             local mt3 = mt2 * mt

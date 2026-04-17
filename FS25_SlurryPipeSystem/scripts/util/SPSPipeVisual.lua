@@ -39,8 +39,10 @@ end
 -- ---------------------------------------------------------------------------
 -- createPipe
 -- nodeA and nodeB are world nodes — their position and rotation drive the bezier.
+-- startConnectorType: "male" (default) or "female" — controls which start
+-- connector shape is shown on the vehicle end of the bez pipe.
 -- ---------------------------------------------------------------------------
-function SPSPipeVisual:createPipe(nodeA, nodeB)
+function SPSPipeVisual:createPipe(nodeA, nodeB, startConnectorType)
     if not self._isLoaded then return nil end
 
     local pipePath = self.modDirectory .. "i3d/pipes/slurryPipe.i3d"
@@ -53,14 +55,15 @@ function SPSPipeVisual:createPipe(nodeA, nodeB)
 
     local pipeRoot = getChildAt(i3dRoot, 0)
 
-    -- Start anchor: slurryPipeConnector (pipeRoot child 1), snapped to nodeA
+    -- slurryPipeConnectors: pipeRoot child 1
+    -- children: 0=female01, 1=male01, 2=componentJoint1, 3=componentJoint2, 4=bezierStart
     local connectorStart = getChildAt(pipeRoot, 1)
 
-    -- Bone1: connectorStart child 0 child 0
-    -- Bone2: connectorStart child 1 child 0
     local bones = {}
-    bones[1] = getChildAt(getChildAt(connectorStart, 0), 0)
-    bones[2] = getChildAt(getChildAt(connectorStart, 1), 0)
+    -- Bone1: connectorStart child 2 (componentJoint1) child 0
+    -- Bone2: connectorStart child 3 (componentJoint2) child 0
+    bones[1] = getChildAt(getChildAt(connectorStart, 2), 0)
+    bones[2] = getChildAt(getChildAt(connectorStart, 3), 0)
 
     -- Bones 3-15: pipeRoot children 2-14, each child 0
     for i = 3, 15 do
@@ -73,11 +76,12 @@ function SPSPipeVisual:createPipe(nodeA, nodeB)
         end
     end
 
-    -- End anchor: endConnectors (pipeRoot child 15), snapped to nodeB
+    -- endConnectors: pipeRoot child 15
+    -- children: 0=female02, 1=male02, 2=componentJoint16, 3=componentJoint17, ...
     local connectorEnd = getChildAt(pipeRoot, 15)
 
-    -- Bone16: endConnectors child 2 child 0
-    -- Bone17: endConnectors child 3 child 0
+    -- Bone16: endConnectors child 2 (componentJoint16) child 0
+    -- Bone17: endConnectors child 3 (componentJoint17) child 0
     bones[16] = getChildAt(getChildAt(connectorEnd, 2), 0)
     bones[17] = getChildAt(getChildAt(connectorEnd, 3), 0)
 
@@ -88,11 +92,25 @@ function SPSPipeVisual:createPipe(nodeA, nodeB)
         return nil
     end
 
-    -- F-F connection: hide male connector (endConnectors child 0)
-    local maleConn = getChildAt(connectorEnd, 0)
-    if maleConn ~= nil and maleConn ~= 0 then
-        setVisibility(maleConn, false)
+    -- Start connector: show female01 (child 0) or male01 (child 1) based on type
+    local femaleStart = getChildAt(connectorStart, 0)
+    local maleStart   = getChildAt(connectorStart, 1)
+    if startConnectorType == "female" then
+        if femaleStart ~= nil and femaleStart ~= 0 then setVisibility(femaleStart, true) end
+        if maleStart   ~= nil and maleStart   ~= 0 then setVisibility(maleStart, false) end
+    else
+        -- default: male
+        if femaleStart ~= nil and femaleStart ~= 0 then setVisibility(femaleStart, false) end
+        if maleStart   ~= nil and maleStart   ~= 0 then setVisibility(maleStart, true) end
     end
+
+    -- End connector default: female02 (child 0) visible, male02 (child 1) hidden
+    -- Store and chain-end connections always receive, so female is correct.
+    -- applyConnectCouplings overrides this for chain start connections.
+    local femaleEnd = getChildAt(connectorEnd, 0)
+    local maleEnd   = getChildAt(connectorEnd, 1)
+    if femaleEnd ~= nil and femaleEnd ~= 0 then setVisibility(femaleEnd, true) end
+    if maleEnd   ~= nil and maleEnd   ~= 0 then setVisibility(maleEnd, false) end
 
     local inst = {
         i3dRoot        = i3dRoot,
@@ -132,7 +150,11 @@ function SPSPipeVisual:updatePipe(inst)
     setWorldRotation(inst.connectorStart, arx, ary, arz)
 
     setWorldTranslation(inst.connectorEnd, bx, by, bz)
-    setWorldRotation(inst.connectorEnd, brx, bry, brz)
+    if inst.connectorEndFlipped then
+        setWorldRotation(inst.connectorEnd, brx, bry + math.pi, brz)
+    else
+        setWorldRotation(inst.connectorEnd, brx, bry, brz)
+    end
 
     local dx   = bx - ax
     local dy   = by - ay
