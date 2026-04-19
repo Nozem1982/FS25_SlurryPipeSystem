@@ -65,9 +65,22 @@ Add as many couplers as you like and add a number.
 2. At this point I would suggest adding the pipe from the i3d so you can position the coupler node correctly.
 Then drag the pipe into the SPS_pipeCoupler01 node.
 
+![Add the pipe from the i3d folder (Remove when done)](images/Pic12.png)
+![Add pipe to the pipeCoupler node](images/Pic13.png)
+
 This is important.. The blue arrow of SPS_pipeCouplerxx must face into the coupler as seen in the pic.
 Repeat this part for each coupler making sure to move only the SPS_pipeCouplerxx and not the pipe.
 
-![Add the pipe from the i3d folder (Remove when done)](images/Pic12.png)
-![Add pipe to the pipeCoupler node](images/Pic13.png)
 ![Position pipe by moving the SPS_pipeCouplerxx node](images/Pic14.png)
+
+## Pump Control
+
+1. As above, use the main vis node name 
+
+![](images/Pic15.png)
+
+2. rearControlNode can be positoned anywhere that the user feels is most likely to have outside controls.
+The TSA tanker (pictured) is in the rear left corner.
+Node rotation does not matter. 
+
+![](images/Pic16.png)
