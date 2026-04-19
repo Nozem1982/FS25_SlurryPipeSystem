@@ -27,6 +27,7 @@ position and rotation as the node it is linked to, otherwise it will not work.
 
 5. Move the now renamed and zero positoned node back from loadingArm03 to fillArmNodes while maintaing the exact position of loadingArm03, then
 move the SPS_fillArmTip01 or SPS_fillArmCentre01 to the correct position on tip of the arm. 
+The rotation of the SPS_fillArmTip01 or SPS_fillArmCentre01 does not matter, just the position.
 
 ![SPS node dropped back to fillArms, keeping the loadingArm03 rotation and position](images/Pic6.png)
 
@@ -35,3 +36,38 @@ move the SPS_fillArmTip01 or SPS_fillArmCentre01 to the correct position on tip 
 7. Now add in the parts of the fillPoints xml that are relevent for you vehicle (follow other files) and add the fill speed from the veh xml.
 
 ![Set fill speed from the vehicle xml](images/Pic7.png)
+
+## Rubber Boot Setup
+
+1. Now follow the same process for the rubber boot, first find the mesh that the rubber boot is part of. In the FRC65 it is the frc_vis.
+
+![Set the rubber boot node the same as the parent from the i3d and the same location](images/Pic8.png)
+
+2. Name the rubberBootNode to the same name 
+
+![Same name](images/Pic9.png)
+
+3. Place the lower and upper nodes in the middle of the rubber boot. Upper at the top of the boot, lower at the lower part.
+
+![Place the nodes, rotation is not important](images/Pic10.png)
+
+4. Remove docking station it not wanted.
+
+RubberBoot done.
+
+## Pipe Coupler Setup
+
+1. Like the rubber boot, you need to find the the mesh name for the couplers. In the frc65 it is the same frc65_vis.
+Add as many couplers as you like and add a number.
+
+![Name must match parent also same loaction, rotation](images/Pic11.png)
+
+2. At this point I would suggest adding the pipe from the i3d so you can position the coupler node correctly.
+Then drag the pipe into the SPS_pipeCoupler01 node.
+
+This is important.. The blue arrow of SPS_pipeCouplerxx must face into the coupler as seen in the pic.
+Repeat this part for each coupler making sure to move only the SPS_pipeCouplerxx and not the pipe.
+
+![Add the pipe from the i3d folder (Remove when done)](images/Pic12.png)
+![Add pipe to the pipeCoupler node](images/Pic13.png)
+![Position pipe by moving the SPS_pipeCouplerxx node](images/Pic14.png)
