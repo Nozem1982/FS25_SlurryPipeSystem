@@ -40,9 +40,11 @@ end
 -- createPipe
 -- nodeA and nodeB are world nodes — their position and rotation drive the bezier.
 -- startConnectorType: "male" (default) or "female" — controls which start
--- connector shape is shown on the vehicle end of the bez pipe.
+-- connector shape is shown (the end attached to nodeA / couplingA).
+-- endConnectorType:   "male" or "female" (default) — controls which end
+-- connector shape is shown (the end attached to nodeB / couplingB).
 -- ---------------------------------------------------------------------------
-function SPSPipeVisual:createPipe(nodeA, nodeB, startConnectorType)
+function SPSPipeVisual:createPipe(nodeA, nodeB, startConnectorType, endConnectorType)
     if not self._isLoaded then return nil end
 
     local pipePath = self.modDirectory .. "i3d/pipes/slurryPipe.i3d"
@@ -104,13 +106,18 @@ function SPSPipeVisual:createPipe(nodeA, nodeB, startConnectorType)
         if maleStart   ~= nil and maleStart   ~= 0 then setVisibility(maleStart, true) end
     end
 
-    -- End connector default: female02 (child 0) visible, male02 (child 1) hidden
-    -- Store and chain-end connections always receive, so female is correct.
-    -- applyConnectCouplings overrides this for chain start connections.
+    -- End connector: show female02 (child 0) or male02 (child 1) based on type.
+    -- Default: female (matches stores and chain receivers which are typically female).
     local femaleEnd = getChildAt(connectorEnd, 0)
     local maleEnd   = getChildAt(connectorEnd, 1)
-    if femaleEnd ~= nil and femaleEnd ~= 0 then setVisibility(femaleEnd, true) end
-    if maleEnd   ~= nil and maleEnd   ~= 0 then setVisibility(maleEnd, false) end
+    if endConnectorType == "male" then
+        if femaleEnd ~= nil and femaleEnd ~= 0 then setVisibility(femaleEnd, false) end
+        if maleEnd   ~= nil and maleEnd   ~= 0 then setVisibility(maleEnd, true) end
+    else
+        -- default: female
+        if femaleEnd ~= nil and femaleEnd ~= 0 then setVisibility(femaleEnd, true) end
+        if maleEnd   ~= nil and maleEnd   ~= 0 then setVisibility(maleEnd, false) end
+    end
 
     local inst = {
         i3dRoot        = i3dRoot,

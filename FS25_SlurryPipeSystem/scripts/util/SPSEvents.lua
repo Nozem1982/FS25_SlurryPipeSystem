@@ -240,25 +240,48 @@ function SlurryValveStateEvent.emptyNew()
     return self
 end
 
-function SlurryValveStateEvent.new(vehicleA, couplingId, isOpen)
+-- Accepts either:
+--   (vehicleA, couplingObjOrId, isOpen)        — preferred, object form
+--   (vehicleA, couplingId, isOpen)             — legacy id form (still works)
+-- When given a coupling object, the event also transmits the placeable owner
+-- reference (if any) so the receiving machine can scope its lookup to that
+-- placeable's storeCouplings — avoiding id collisions across multiple
+-- placeables that share coupling ids.
+function SlurryValveStateEvent.new(vehicleA, couplingArg, isOpen)
     local self = SlurryValveStateEvent.emptyNew()
     self.vehicleA   = vehicleA
-    self.couplingId = couplingId
     self.isOpen     = isOpen
+    if type(couplingArg) == "table" then
+        self.couplingId        = couplingArg.id
+        self.placeableOwner    = couplingArg.placeable   -- nil for vehicle/chain couplings
+    else
+        self.couplingId        = couplingArg
+        self.placeableOwner    = nil
+    end
     return self
 end
 
 function SlurryValveStateEvent:readStream(streamId, connection)
-    self.vehicleA   = NetworkUtil.readNodeObject(streamId)
-    self.couplingId = streamReadUIntN(streamId, 4)
-    self.isOpen     = streamReadBool(streamId)
+    self.vehicleA       = NetworkUtil.readNodeObject(streamId)
+    self.couplingId     = streamReadIntN(streamId, 5)   -- signed: chain start = -2
+    self.isOpen         = streamReadBool(streamId)
+    local hasOwner      = streamReadBool(streamId)
+    if hasOwner then
+        self.placeableOwner = NetworkUtil.readNodeObject(streamId)
+    else
+        self.placeableOwner = nil
+    end
     self:run(connection)
 end
 
 function SlurryValveStateEvent:writeStream(streamId, connection)
     NetworkUtil.writeNodeObject(streamId, self.vehicleA)
-    streamWriteUIntN(streamId, self.couplingId, 4)
+    streamWriteIntN(streamId, self.couplingId or 0, 5)
     streamWriteBool(streamId, self.isOpen)
+    streamWriteBool(streamId, self.placeableOwner ~= nil)
+    if self.placeableOwner ~= nil then
+        NetworkUtil.writeNodeObject(streamId, self.placeableOwner)
+    end
 end
 
 function SlurryValveStateEvent:run(connection)
@@ -266,17 +289,30 @@ function SlurryValveStateEvent:run(connection)
         g_server:broadcastEvent(self, false, connection, self.vehicleA)
     end
     if g_slurryPipeManager ~= nil then
-        g_slurryPipeManager:applyValveState(self.vehicleA, self.couplingId, self.isOpen)
+        -- If a placeable owner was transmitted, narrow the lookup to that
+        -- specific placeable's couplings before falling back to global search.
+        local couplingObj = nil
+        if self.placeableOwner ~= nil then
+            for _, pEntry in ipairs(g_slurryPipeManager.registeredPlaceables) do
+                if pEntry.placeable == self.placeableOwner and pEntry.storeCouplings ~= nil then
+                    for _, sc in ipairs(pEntry.storeCouplings) do
+                        if sc.id == self.couplingId then couplingObj = sc break end
+                    end
+                    break
+                end
+            end
+        end
+        g_slurryPipeManager:applyValveState(self.vehicleA, self.couplingId, self.isOpen, couplingObj)
     end
 end
 
-function SlurryValveStateEvent.sendEvent(vehicleA, couplingId, isOpen, noEventSend)
+function SlurryValveStateEvent.sendEvent(vehicleA, couplingArg, isOpen, noEventSend)
     if noEventSend == nil or noEventSend == false then
         if g_server ~= nil then
-            g_server:broadcastEvent(SlurryValveStateEvent.new(vehicleA, couplingId, isOpen), nil, nil, vehicleA)
+            g_server:broadcastEvent(SlurryValveStateEvent.new(vehicleA, couplingArg, isOpen), nil, nil, vehicleA)
             return
         end
-        g_client:getServerConnection():sendEvent(SlurryValveStateEvent.new(vehicleA, couplingId, isOpen))
+        g_client:getServerConnection():sendEvent(SlurryValveStateEvent.new(vehicleA, couplingArg, isOpen))
     end
 end
 -- ---------------------------------------------------------------------------

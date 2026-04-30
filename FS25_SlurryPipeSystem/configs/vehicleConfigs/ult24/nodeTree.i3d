@@ -24,7 +24,7 @@
         <TransformGroup name="ult24_vis" nodeId="10">
           <TransformGroup name="SPS_rubberBootLower01" translation="0 3.252 -3.822" nodeId="11"/>
           <TransformGroup name="SPS_rubberBootUpper01" translation="0 3.67535 -3.822" nodeId="12"/>
-          <Shape name="dockingStationCol1" translation="0 3.2936 -3.83107" scale="1.1 1 1.1" shapeId="1" dynamic="true" compound="true" collisionFilterGroup="0x10004" collisionFilterMask="0xfe3ffb83" nodeId="13" castsShadows="true" receiveShadows="true" nonRenderable="true" materialIds="5"/>
+          <Shape name="dockingStationCol1" translation="0 3.2936 -3.83107" scale="1.1 1 1.1" shapeId="1" nodeId="13" castsShadows="true" receiveShadows="true" nonRenderable="true" materialIds="5"/>
         </TransformGroup>
       </TransformGroup>
       <TransformGroup name="pipeCouplers" nodeId="14">
@@ -38,7 +38,7 @@
         </TransformGroup>
       </TransformGroup>
       <TransformGroup name="pumpControls" nodeId="20"/>
-      <TransformGroup name="exhaustNode" translation="1.14868 1.04626 -3.37517" nodeId="23"/>
+      <TransformGroup name="exhaustNode" translation="1.14868 1.04626 -3.37517" nodeId="21"/>
     </TransformGroup>
   </Scene>
 

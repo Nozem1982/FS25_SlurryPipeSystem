@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- FS25_SlurryPipeSystem — Config Manifest -->
+<!-- Add a new entry here whenever a new vehicle or placeable config folder is created -->
+
+<spsConfigManifest>
+
+    <vehicleConfigs>
+        <folder name="at5105"/>
+        <folder name="cobra"/>
+        <folder name="kaweco_profi2"/>
+        <folder name="kotte_frc65"/>
+        <folder name="pq32000"/>
+        <folder name="PTOSlurryPump"/>
+        <folder name="samsonAgro_pgII28Genesis"/>
+        <folder name="tsa"/>
+        <folder name="ult18"/>
+        <folder name="ult24"/>
+		<folder name="FS25_Pichon_BMIX80"/>
+    </vehicleConfigs>
+
+    <placeableConfigs>
+        <folder name="baseTank"/>
+        <folder name="cowBarnBig"/>
+        <folder name="cowBarnBigGea"/>
+        <folder name="cowBarnBigVector"/>
+        <folder name="cowBarnMedium"/>
+        <folder name="extensionLarge"/>
+        <folder name="extensionSmall"/>
+        <folder name="FS25_mrhLiquidManureTank">
+            <folder name="liquidManureTank"/>
+        </folder>
+        <folder name="FS25_UKStlyleBuilding">
+            <folder name="cowShedUK"/>
+            <folder name="cowShedUK_nonMilk"/>
+        </folder>
+        <folder name="pigBarnBig"/>
+        <folder name="pigBarnMedium"/>
+		<folder name="Witcombe">
+            <folder name="cowBarn01"/>
+            <folder name="cowBarnParlour"/>
+			<folder name="dairy"/>
+        </folder>
+    </placeableConfigs>
+	
+</spsConfigManifest>

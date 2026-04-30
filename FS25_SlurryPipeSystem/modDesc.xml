@@ -88,12 +88,17 @@ Fonctionnalités:
 		<sourceFile filename="scripts/util/SPSPipeActivatable.lua"/>
 		<sourceFile filename="scripts/util/SPSPipeChain.lua"/>
 		<sourceFile filename="scripts/util/SPSChainActivatable.lua"/>
+		<sourceFile filename="scripts/util/SPSCouplerAnimator.lua"/>
 		<sourceFile filename="scripts/util/SPSPumpControlActivatable.lua"/>
 		<sourceFile filename="scripts/util/SPSConduitHUDExtension.lua"/>
+		<sourceFile filename="scripts/util/SlurryAgitatorEvent.lua"/>
+		<sourceFile filename="scripts/util/SPSCrustVegetation.lua"/>
+		<sourceFile filename="scripts/specializations/SlurryAgitator.lua"/>
 		
         <sourceFile filename="scripts/manager/SlurryPipeManager.lua" />
 
         <sourceFile filename="scripts/overrides/ManureBarrelOverride.lua" />
+        <sourceFile filename="scripts/overrides/PlaceableOverride.lua" />
 
         <sourceFile filename="scripts/init.lua" />
 		
@@ -121,9 +126,16 @@ Fonctionnalités:
 		</actionBinding>
 	</inputBinding>
 	
-	<vehicleTypes>
+	<specializations>
+        <specialization name="slurryAgitator" className="SlurryAgitator" filename="scripts/specializations/SlurryAgitator.lua"/>
+    </specializations>
+
+    <vehicleTypes>
         <type name="manurePump" parent="implement" className="Vehicle" filename="$dataS/scripts/vehicles/Vehicle.lua">
             <specialization name="turnOnVehicle"/>
+        </type>
+        <type name="slurryAgitator" parent="implement" className="Vehicle" filename="$dataS/scripts/vehicles/Vehicle.lua">
+            <specialization name="slurryAgitator"/>
         </type>
 	</vehicleTypes>
 	

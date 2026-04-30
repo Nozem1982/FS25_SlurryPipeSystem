@@ -24,7 +24,7 @@
         <TransformGroup name="frc65_vis" nodeId="10">
           <TransformGroup name="SPS_rubberBootLower01" translation="0 3.765 -5.90532" nodeId="11"/>
           <TransformGroup name="SPS_rubberBootUpper01" translation="0 4.09627 -5.90532" nodeId="12"/>
-          <Shape name="dockingStationCol1" translation="0 3.72231 -5.90532" shapeId="1" dynamic="true" compound="true" collisionFilterGroup="0x10004" collisionFilterMask="0xfe3ffb83" nodeId="13" castsShadows="true" receiveShadows="true" nonRenderable="true" materialIds="5"/>
+          <Shape name="dockingStationCol1" translation="0 3.72231 -5.90532" shapeId="1" nodeId="13" castsShadows="true" receiveShadows="true" nonRenderable="true" materialIds="5"/>
         </TransformGroup>
       </TransformGroup>
       <TransformGroup name="pipeCouplers" nodeId="14">

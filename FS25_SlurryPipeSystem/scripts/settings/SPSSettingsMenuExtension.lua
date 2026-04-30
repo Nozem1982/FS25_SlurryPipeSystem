@@ -45,6 +45,15 @@ function SPSSettingsMenuExtension:onFrameOpen()
         g_i18n:getText("sps_settingsSlurryPipeTooltip")
     )
 
+    -- Agitation toggle row
+    self.sps_agitationElement = SPSSettingsMenuExtension:_addMultiTextOption(
+        self,
+        "onSPSAgitationChanged",
+        { g_i18n:getText("ui_no"), g_i18n:getText("ui_yes") },
+        g_i18n:getText("sps_settingsAgitation"),
+        g_i18n:getText("sps_settingsAgitationTooltip")
+    )
+
     self.gameSettingsLayout:invalidateLayout()
     self:updateAlternatingElements(self.gameSettingsLayout)
 
@@ -67,6 +76,9 @@ function SPSSettingsMenuExtension:_updateState(page)
     if g_slurryPipeManager == nil then return end
     if page.sps_slurryPipeColorElement == nil then return end
     page.sps_slurryPipeColorElement:setState(g_slurryPipeManager.currentPipeColorIndex, false)
+    if page.sps_agitationElement ~= nil then
+        page.sps_agitationElement:setState(g_slurryPipeManager.agitationEnabled and 2 or 1, false)
+    end
 end
 
 -- ---------------------------------------------------------------------------
@@ -78,6 +90,11 @@ function SPSSettingsMenuExtension:onSPSSlurryPipeColorChanged(state)
         return
     end
     g_slurryPipeManager:setCurrentPipeColor(state)
+end
+
+function SPSSettingsMenuExtension:onSPSAgitationChanged(state)
+    if g_slurryPipeManager == nil then return end
+    g_slurryPipeManager.agitationEnabled = (state == 2)
 end
 
 -- ---------------------------------------------------------------------------

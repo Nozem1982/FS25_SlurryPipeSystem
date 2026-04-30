@@ -171,6 +171,25 @@ local function registerOverrides()
         end
     end
 
+    -- Register updateInfo override on all placeable types with PlaceableInfoTrigger.
+    -- Appends slurry thickness row for agitator-enabled placeables.
+    if g_placeableTypeManager ~= nil then
+        for _, pTypeEntry in pairs(g_placeableTypeManager:getTypes()) do
+            if pTypeEntry.specializations ~= nil then
+                for _, spec in ipairs(pTypeEntry.specializations) do
+                    if spec == PlaceableInfoTrigger then
+                        SpecializationUtil.registerOverwrittenFunction(
+                            pTypeEntry,
+                            "updateInfo",
+                            SPSPlaceableOverride.updateInfo
+                        )
+                        break
+                    end
+                end
+            end
+        end
+    end
+
 end
 
 -- ---------------------------------------------------------------------------
@@ -225,12 +244,20 @@ function SPSMod:loadMap(filename)
 
     if g_currentMission ~= nil and g_currentMission.placeableSystem ~= nil then
         local ps = g_currentMission.placeableSystem
-        local placeables = ps.placeables or ps.objects or {}
-        local count = 0
+        -- Bought/saved placeables
+        local placeables = ps.placeables or {}
         for _, placeable in ipairs(placeables) do
-            if placeable ~= nil and (placeable.spec_silo ~= nil or placeable.spec_husbandry ~= nil) then
+            if placeable ~= nil and (placeable.spec_silo ~= nil or placeable.spec_husbandry ~= nil or placeable.spec_siloExtension ~= nil) then
                 g_slurryPipeManager:registerPlaceable(placeable)
-                count = count + 1
+            end
+        end
+        -- Map-embedded (preplaced) placeables
+        if ps.uniqueIdToReplacedPlaceableData ~= nil then
+            for _, data in pairs(ps.uniqueIdToReplacedPlaceableData) do
+                local placeable = data.placeable
+                if placeable ~= nil and (placeable.spec_silo ~= nil or placeable.spec_husbandry ~= nil or placeable.spec_siloExtension ~= nil) then
+                    g_slurryPipeManager:registerPlaceable(placeable)
+                end
             end
         end
     end
@@ -337,6 +364,9 @@ function Vehicle:registerActionEvents(excludedVehicle)
     if self.spec_turnOnVehicle == nil then return end
     if not self.isClient then return end
     if not self:getIsActiveForInput(true) then return end
+
+    -- Agitator-only vehicles need no SPS action events — they use PTO directly
+    if g_slurryPipeManager:isVehicleAgitatorOnly(self) then return end
 
     -- Prevent double-registration within the same tick (FS25 calls registerActionEvents
     -- multiple times per context switch). Allow re-registration on subsequent ticks
@@ -552,7 +582,10 @@ function Placeable:finalizePlacement()
         origPlaceableFinalize(self)
     end
     if g_slurryPipeManager ~= nil and (self.spec_silo ~= nil or self.spec_husbandry ~= nil or self.spec_siloExtension ~= nil) then
-        g_slurryPipeManager:registerPlaceable(self)
+        -- Avoid double-registration for placeables already registered in loadMap
+        if g_slurryPipeManager:getPlaceableEntry(self) == nil then
+            g_slurryPipeManager:registerPlaceable(self)
+        end
     end
 end
 

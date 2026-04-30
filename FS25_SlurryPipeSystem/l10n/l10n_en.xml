@@ -60,5 +60,15 @@
         <text name="input_SPS_TOGGLE_SPREADER"          text="SPS Spreader Valve" />
         <text name="action_spsSpreaderOpen"             text="Spreader Valve is CLOSED" />
         <text name="action_spsSpreaderClose"            text="Spreader Valve is OPEN" />
+
+        <!-- Slurry thickness / agitation -->
+        <text name="warning_spsSlurryThickening"        text="Slurry crust: %d%% — agitation advised" />
+        <text name="warning_spsSlurryTooThick"          text="Slurry too thick — agitation required" />
+        <text name="sps_settingsAgitation"              text="Slurry Agitation" />
+        <text name="sps_settingsAgitationTooltip"       text="Enable slurry thickening and agitation system" />
+        <text name="action_spsAgitatorOn"               text="Agitator: OFF — PTO running" />
+        <text name="action_spsAgitatorOff"              text="Agitator: ON — PTO running" />
+        <text name="warning_spsAgitatorNotSubmerged"    text="Agitator not submerged" />
+        <text name="sps_infoThicknessTitle"             text="Slurry Thickness" />
     </texts>
 </l10n>

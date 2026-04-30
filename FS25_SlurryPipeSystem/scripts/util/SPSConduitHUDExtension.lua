@@ -22,7 +22,7 @@ function SPSConduitHUDExtension.new(vehicle)
     self.backgroundScale:setColor(r, g, b, a)
     self.backgroundBottom:setColor(r, g, b, a)
 
-    -- Two data rows: FROM and TO
+    -- Two data rows: FROM and TO, plus optional thickness warning
     self.NUM_ROWS = 2
 
     self:storeScaledValues()
@@ -160,9 +160,34 @@ function SPSConduitHUDExtension:draw(inputHelpDisplay, posX, posY)
         end
     end
 
+    -- Build row list — FROM, TO, and optional thickness warning
+    local rows = { srcText, dstText }
+
+    if g_slurryPipeManager ~= nil then
+        local cvState = g_slurryPipeManager:getVehicleState(self.vehicle)
+        if cvState ~= nil then
+            local extSrc = g_slurryPipeManager:resolveExternalSource(self.vehicle)
+            if extSrc ~= nil then
+                local warn = g_slurryPipeManager:getThicknessWarning(extSrc)
+                if warn == "tooThick" then
+                    table.insert(rows, g_i18n:getText("warning_spsSlurryTooThick"))
+                elseif warn == "thickening" then
+                    local pct = math.floor((extSrc.thickness or 0) * 100)
+                    table.insert(rows, string.format(g_i18n:getText("warning_spsSlurryThickening"), pct))
+                end
+            end
+        end
+    end
+
+    -- Update background height if row count changed
+    local numRows = #rows
+    if numRows ~= self.NUM_ROWS then
+        self.NUM_ROWS = numRows
+        self:storeScaledValues()
+    end
+
     -- Draw rows bottom-up from offsetTop
     local rowPosY = posY - self.offsetTop
-    local rows = { srcText, dstText }
     for _, rowStr in ipairs(rows) do
         rowPosY = rowPosY - self.rowHeight
         local clipped = Utils.limitTextToWidth(rowStr, self.textSize,

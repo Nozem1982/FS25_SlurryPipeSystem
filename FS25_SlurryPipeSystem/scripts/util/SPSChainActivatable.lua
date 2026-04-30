@@ -155,6 +155,10 @@ function SPSChainActivatable:_onShortPress()
         if g_slurryPipeManager ~= nil then
             g_slurryPipeManager:onChainStartLaying(self.coupling, self)
         end
+    elseif state == "deployedCoupling" then
+        if g_slurryPipeManager ~= nil then
+            g_slurryPipeManager:onChainStartLaying(self.coupling, self)
+        end
     elseif state == "finalisePipe" then
         -- Short press: lock only if player has walked at least 0.5m from pipe start
         if self.chain ~= nil and self.chain.liveSegment ~= nil then
@@ -221,6 +225,10 @@ function SPSChainActivatable:_onLongPress()
         if g_slurryPipeManager ~= nil then
             g_slurryPipeManager:onCouplingDeploy(self.coupling)
         end
+    elseif state == "deployedCoupling" then
+        if g_slurryPipeManager ~= nil then
+            g_slurryPipeManager:onCouplingUndeploy(self.coupling)
+        end
     elseif state == "layMorePipe" or state == "layFirstPipe" then
         -- Deployable coupling deployed with no chain: long press removes coupling
         if state == "layFirstPipe" and self.coupling ~= nil
@@ -241,7 +249,11 @@ function SPSChainActivatable:_onLongPress()
             self.chain.anchorCoupling.valveOpen = false
         end
     elseif state == "connectedValveClosed" then
+        -- Anchor (arcIndex==0) toggles via the chain's last (far-end) segment
         local seg = self.chain.segments[self.arcIndex]
+        if seg == nil and self.arcIndex == 0 then
+            seg = self.chain.segments[#self.chain.segments]
+        end
         if seg ~= nil and seg.chainCoupling ~= nil then
             local cc = seg.chainCoupling
             cc.valveOpen = true
@@ -255,9 +267,28 @@ function SPSChainActivatable:_onLongPress()
                     self.chain.anchorCoupling.connectedPartnerCoupling.valveOpen = true
                 end
             end
+            -- Play valveAnim forward on every coupling that has one bound (no-ops otherwise)
+            if SPSCouplerAnimator ~= nil then
+                if cc.valveAnim ~= nil then SPSCouplerAnimator.play(cc.valveAnim, 1) end
+                if cc.connectedPartnerCoupling ~= nil and cc.connectedPartnerCoupling.valveAnim ~= nil then
+                    SPSCouplerAnimator.play(cc.connectedPartnerCoupling.valveAnim, 1)
+                end
+                if self.chain.anchorCoupling ~= nil and self.chain.anchorCoupling.valveAnim ~= nil then
+                    SPSCouplerAnimator.play(self.chain.anchorCoupling.valveAnim, 1)
+                end
+                if self.chain.anchorCoupling ~= nil
+                and self.chain.anchorCoupling.connectedPartnerCoupling ~= nil
+                and self.chain.anchorCoupling.connectedPartnerCoupling.valveAnim ~= nil then
+                    SPSCouplerAnimator.play(self.chain.anchorCoupling.connectedPartnerCoupling.valveAnim, 1)
+                end
+            end
         end
     elseif state == "connectedValveOpen" then
+        -- Anchor (arcIndex==0) toggles via the chain's last (far-end) segment
         local seg = self.chain.segments[self.arcIndex]
+        if seg == nil and self.arcIndex == 0 then
+            seg = self.chain.segments[#self.chain.segments]
+        end
         if seg ~= nil and seg.chainCoupling ~= nil then
             local cc = seg.chainCoupling
             cc.valveOpen = false
@@ -277,6 +308,21 @@ function SPSChainActivatable:_onLongPress()
                 if g_slurryPipeManager ~= nil then
                     local anchorVehicle, _ = g_slurryPipeManager:_findCouplingOwner(self.chain.anchorCoupling)
                     if anchorVehicle ~= nil then g_slurryPipeManager:stopFlow(anchorVehicle) end
+                end
+            end
+            -- Play valveAnim reverse on every coupling that has one bound (no-ops otherwise)
+            if SPSCouplerAnimator ~= nil then
+                if cc.valveAnim ~= nil then SPSCouplerAnimator.play(cc.valveAnim, -1) end
+                if cc.connectedPartnerCoupling ~= nil and cc.connectedPartnerCoupling.valveAnim ~= nil then
+                    SPSCouplerAnimator.play(cc.connectedPartnerCoupling.valveAnim, -1)
+                end
+                if self.chain.anchorCoupling ~= nil and self.chain.anchorCoupling.valveAnim ~= nil then
+                    SPSCouplerAnimator.play(self.chain.anchorCoupling.valveAnim, -1)
+                end
+                if self.chain.anchorCoupling ~= nil
+                and self.chain.anchorCoupling.connectedPartnerCoupling ~= nil
+                and self.chain.anchorCoupling.connectedPartnerCoupling.valveAnim ~= nil then
+                    SPSCouplerAnimator.play(self.chain.anchorCoupling.connectedPartnerCoupling.valveAnim, -1)
                 end
             end
         end
@@ -302,6 +348,9 @@ function SPSChainActivatable:_getState()
                 local v, _ = g_slurryPipeManager:_findCouplingOwner(self.coupling)
                 if v ~= nil and g_slurryPipeManager:isVehicleConduit(v) then return nil end
             end
+            if self.coupling.deployable and self.coupling.isDeployed then
+                return "deployedCoupling"
+            end
             return "layFirstPipe"
         end
         -- Live pipe being walked: offer finalise (short) or cancel (long press)
@@ -318,6 +367,25 @@ function SPSChainActivatable:_getState()
             if g_slurryPipeManager ~= nil and self.coupling ~= nil then
                 local vehicle, _ = g_slurryPipeManager:_findCouplingOwner(self.coupling)
                 if vehicle ~= nil then return nil end
+            end
+            -- Placeable anchor: if the chain's far end is connected to a tanker via a
+            -- manual valve, expose valve toggle here too so the player can open/close
+            -- the valve from either end of the chain.
+            local lastSeg = self.chain.segments[#self.chain.segments]
+            if lastSeg ~= nil and lastSeg.chainCoupling ~= nil and lastSeg.chainCoupling.isConnected then
+                local cc = lastSeg.chainCoupling
+                local partner = cc.connectedPartnerCoupling
+                local exposeValve = true
+                if partner ~= nil then
+                    if partner.valveType == SPS_VALVE_TYPE_HYDRAULIC then exposeValve = false end
+                    if g_slurryPipeManager ~= nil then
+                        local v, _ = g_slurryPipeManager:_findCouplingOwner(partner)
+                        if v ~= nil and g_slurryPipeManager:isVehicleConduit(v) then exposeValve = false end
+                    end
+                end
+                if exposeValve then
+                    return cc.valveOpen and "connectedValveOpen" or "connectedValveClosed"
+                end
             end
             return "removePipeChain"
         end
@@ -408,6 +476,7 @@ function SPSChainActivatable:_buildActivateText()
     local state = self:_getState()
     if state == "deployCoupling"          then return g_i18n:getText("action_spsDeployCoupling") end
     if state == "removeCoupling"          then return g_i18n:getText("action_spsRemoveCoupling") end
+    if state == "deployedCoupling"        then return g_i18n:getText("action_spsRemoveCoupling") end
     if state == "layFirstPipe"            then return g_i18n:getText("action_spsLayFirstPipe") end
     if state == "finalisePipe"         then return g_i18n:getText("action_spsFinalisePipe") end
     if state == "layMorePipe"          then return g_i18n:getText("action_spsLayPipe") end

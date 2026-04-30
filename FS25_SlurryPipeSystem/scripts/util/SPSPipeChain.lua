@@ -122,6 +122,16 @@ function SPSPipeChain:lockLivePipe()
                         self.anchorCoupling.id, startCoupling.id)
                     print("[SPS] lockLivePipe: auto-connected bez from vehicle coupler to chain start")
                 end
+            elseif self.anchorCoupling.placeable ~= nil then
+                -- Placeable anchor: do NOT mark the anchor isConnected (would break the
+                -- activatable's state machine and create a phantom bez pipe visual).
+                -- Instead, link startCoupling -> anchor as a one-way "logical" pair so
+                -- _propagateValveState can walk from the chain back to the placeable's
+                -- valve handle when the tanker's valve is toggled at the far end.
+                startCoupling.isConnected              = true
+                startCoupling.connectedPartnerCoupling = self.anchorCoupling
+                startCoupling.connectedTarget          = self.anchorCoupling.placeable
+                print("[SPS] lockLivePipe: linked chain start to placeable anchor for valve propagation")
             end
         end
     end
@@ -443,9 +453,11 @@ function SPSPipeChain:addDockingStation()
     local terrain  = g_currentMission ~= nil and g_currentMission.terrainRootNode or nil
     local terrainY = (terrain ~= nil) and getTerrainHeightAtWorldPos(terrain, ex, 0, ez) or ey
 
+    removeFromPhysics(dsNode)
     link(getRootNode(), dsNode)
     setWorldTranslation(dsNode, ex, terrainY, ez)
     setWorldRotation(dsNode, rx, ry, rz)
+    addToPhysics(dsNode)
     delete(i3dRoot)
 
     -- Save endConnectors position before moving it, so it can be restored if DS is removed
@@ -563,12 +575,12 @@ function SPSPipeChain:getSaveData()
         and self.dockingStation.origEndX ~= nil then
             wx = self.dockingStation.origEndX ; wy = self.dockingStation.origEndY
             wz = self.dockingStation.origEndZ
-            rx = self.dockingStation.origEndRX ; ry = self.dockingStation.origEndRY
-            rz = self.dockingStation.origEndRZ
+            rx, ry, rz = 0, self.dockingStation.origEndRY or 0, 0
         else
             if seg.endConnectors ~= nil and seg.endConnectors ~= 0 then
                 wx, wy, wz = getWorldTranslation(seg.endConnectors)
-                rx, ry, rz = getWorldRotation(seg.endConnectors)
+                local _, savedRY, _ = getWorldRotation(seg.endConnectors)
+                rx, ry, rz = 0, savedRY, 0
             end
         end
         if wx ~= nil then
@@ -583,18 +595,9 @@ function SPSPipeChain:restoreFromSaveData(data)
     local nextX, nextY, nextZ, nextRY
     if data.chainStartX ~= nil then
         nextX, nextY, nextZ = data.chainStartX, data.chainStartY, data.chainStartZ
-        -- Derive pipeRoot facing from direction toward segment 1.
-        -- Saved chainStartRY is the coupling facing direction — not the actual pipe
-        -- extension direction — using it causes a backwards bezier arc on restore.
-        if #data.segments > 0 then
-            local seg1 = data.segments[1]
-            local dx = seg1.x - data.chainStartX
-            local dz = seg1.z - data.chainStartZ
-            local len = math.sqrt(dx * dx + dz * dz)
-            nextRY = len > 0.001 and math.atan2(-dx / len, -dz / len) or (data.chainStartRY or 0)
-        else
-            nextRY = data.chainStartRY or 0
-        end
+        -- chainStartRY is saved as getWorldRotation(segments[1].pipeRoot) — use it directly
+        -- so the bezier tangent at the coupler end matches the original pipe layout.
+        nextRY = data.chainStartRY or 0
     else
         nextX, nextY, nextZ = getWorldTranslation(self.anchorCoupling.mountNode)
         local _, ry, _ = getWorldRotation(self.anchorCoupling.mountNode)
@@ -688,9 +691,11 @@ function SPSPipeChain:_restoreDockingStation(data)
     local upperNode     = getChildAt(visShape, 1)
     local dockingTarget = getChildAt(dsNode, 2)
 
+    removeFromPhysics(dsNode)
     link(getRootNode(), dsNode)
     setWorldTranslation(dsNode, data.dsSaveX, data.dsSaveY, data.dsSaveZ)
     setWorldRotation(dsNode, data.dsSaveRX, data.dsSaveRY, data.dsSaveRZ)
+    addToPhysics(dsNode)
     delete(i3dRoot)
 
     -- Save original endConnectors pos then move to dockingTarget

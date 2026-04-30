@@ -162,6 +162,26 @@ function SlurryNodeUtil.isNodeInTriggerBox(testNode, triggerNode)
     return false
 end
 
+-- Returns true if testNode's XZ world position is inside the given planeBounds.
+-- planeBounds is the struct built in registerPlaceable:
+--   round:     { shape="round",     centreNode, radius }
+--   rectangle: { shape="rectangle", centreNode, minX, maxX, minZ, maxZ }
+-- Returns false if planeBounds is nil (coupling-only placeable with no authored bounds).
+function SlurryNodeUtil.isNodeInPlaneBounds(testNode, planeBounds)
+    if testNode == nil or planeBounds == nil then return false end
+    local wx, wy, wz = getWorldTranslation(testNode)
+    if planeBounds.shape == "round" then
+        local bx, _, bz = getWorldTranslation(planeBounds.centreNode)
+        local dx, dz    = wx - bx, wz - bz
+        return (dx * dx + dz * dz) <= (planeBounds.radius * planeBounds.radius)
+    elseif planeBounds.shape == "rectangle" then
+        local lx, _, lz = worldToLocal(planeBounds.centreNode, wx, wy, wz)
+        return lx >= planeBounds.minX and lx <= planeBounds.maxX
+            and lz >= planeBounds.minZ and lz <= planeBounds.maxZ
+    end
+    return false
+end
+
 function SlurryNodeUtil.getDistanceBetweenNodes(nodeA, nodeB)
     if nodeA == nil or nodeB == nil then return math.huge end
     local ax, ay, az = getWorldTranslation(nodeA)

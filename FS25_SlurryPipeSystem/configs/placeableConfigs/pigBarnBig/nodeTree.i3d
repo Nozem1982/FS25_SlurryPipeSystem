@@ -41,8 +41,6 @@
       <Normalmap fileId="20"/>
       <Glossmap fileId="21"/>
     </Material>
-    <Material name="lambert1" materialId="35" diffuseColor="0.8 0.8 0.8 1" specularColor="0.501961 1 0">
-    </Material>
     <Material name="plasticPainted_mat" materialId="7" customShaderId="4">
       <Texture fileId="1"/>
       <Normalmap fileId="2"/>
@@ -84,11 +82,10 @@
               <TransformGroup name="SPS_pipeCoupler01Arc01" translation="-1.5 0 2.5" nodeId="19"/>
               <TransformGroup name="SPS_pipeCoupler01Arc02" translation="1.5 0 2.5" nodeId="20"/>
             </TransformGroup>
-            <Shape name="slurryPipeConnectors03Coupler" translation="0.00149536 -0.724549 0.435612" rotation="90 70 90" shapeId="1" static="true" collisionFilterGroup="0x3e" collisionFilterMask="0xfffffbff" clipDistance="150" nodeId="21" castsShadows="true" receiveShadows="true" materialIds="9,5,7,8">
-              <Shape name="slurryPipeConnectors03Pipe01" shapeId="2" static="true" collisionFilterGroup="0x3e" collisionFilterMask="0xfffffbff" clipDistance="150" nodeId="22" castsShadows="true" receiveShadows="true" materialIds="9"/>
+            <Shape name="slurryPipeConnectors03Coupler" translation="0.00149536 -0.724549 0.435612" rotation="90 70 90" shapeId="1" kinematic="true" collisionFilterGroup="0x1034" collisionFilterMask="0xfffffbff" clipDistance="150" nodeId="21" castsShadows="true" receiveShadows="true" materialIds="9,5,7,8">
+              <Shape name="slurryPipeConnectors03Pipe01" shapeId="2" kinematic="true" collisionFilterGroup="0x1034" collisionFilterMask="0xfffffbff" clipDistance="150" nodeId="22" castsShadows="true" receiveShadows="true" materialIds="9"/>
             </Shape>
-            <Shape name="grate" translation="0.00149543 -0.724549 0.435612" rotation="90 70 90" shapeId="3" static="true" collisionFilterGroup="0x3e" collisionFilterMask="0xfffffbff" density="0.0001" clipDistance="150" nodeId="23" castsShadows="true" receiveShadows="true" materialIds="6"/>
-            <Shape name="col" translation="-2.54421 -7.45532 18.8155" rotation="90 70 90" shapeId="4" static="true" collisionFilterGroup="0x1034" collisionFilterMask="0xfffffbff" nodeId="38" castsShadows="true" receiveShadows="true" nonRenderable="true" materialIds="35"/>
+            <Shape name="grate" translation="0.00149543 -0.724549 0.435612" rotation="90 70 90" shapeId="3" kinematic="true" collisionFilterGroup="0x1034" collisionFilterMask="0xfffffbff" density="0.0001" clipDistance="150" nodeId="23" castsShadows="true" receiveShadows="true" materialIds="6"/>
           </TransformGroup>
         </TransformGroup>
       </TransformGroup>

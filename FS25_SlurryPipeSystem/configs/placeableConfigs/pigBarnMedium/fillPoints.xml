@@ -5,10 +5,10 @@
 <!-- Author: Oscar Mods -->
 <!-- Version: 1.0.0.0 -->
 
-<slurryPipeSystem>
+<slurryPipeSystem agitator="false">
 
     <nodeTree filename="nodeTree.i3d"/>
-
+	
     <pipeCouplings>
 
         <pipeCoupling
@@ -26,10 +26,13 @@
     <hideNodes>
         <node name="visual"/>
 		<node name="fence"/>
+		<node name="decals1"/>
+		<node name="visual_LOD"/>
     </hideNodes>
 
     <hideCollisions>
         <node name="fence"/>
+		<node name="collision"/>
     </hideCollisions>
 
 </slurryPipeSystem>

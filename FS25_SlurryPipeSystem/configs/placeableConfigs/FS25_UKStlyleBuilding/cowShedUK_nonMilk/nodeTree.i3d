@@ -49,12 +49,12 @@
     <TransformGroup name="SPS_cowShedUK_nonMilk" nodeId="10">
       <TransformGroup name="pipeCouplers" nodeId="11">
         <TransformGroup name="cowShedUK_nonMilk" nodeId="12">
-          <TransformGroup name="SPS_pipeCoupler01" translation="29.2691 0.164293 60.3558" rotation="-180 -1.86693e-05 -180" nodeId="13">
+          <TransformGroup name="SPS_pipeCoupler01" translation="29.2691 0.114 60.3558" rotation="-180 -1.86693e-05 -180" nodeId="13">
             <TransformGroup name="SPS_pipeCoupler01Arcs" translation="0 0 8.5607e-07" rotation="180 1.86693e-05 180" nodeId="14">
               <TransformGroup name="SPS_pipeCoupler01Arc01" translation="-1.5 0 2.5" nodeId="15"/>
               <TransformGroup name="SPS_pipeCoupler01Arc02" translation="1.5 0 2.5" nodeId="16"/>
             </TransformGroup>
-            <Shape name="slurryHoseConnetorMale02" translation="29.2691 -0.214285 60.3558" rotation="-180 1.86693e-05 -180" shapeId="1" kinematic="true" collisionFilterGroup="0x1034" collisionFilterMask="0xfffffbff" clipDistance="150" nodeId="17" castsShadows="false" receiveShadows="false" materialIds="6">
+            <Shape name="slurryHoseConnetorMale02" rotation="-180 1.86693e-05 -180" shapeId="1" kinematic="true" collisionFilterGroup="0x1034" collisionFilterMask="0xfffffbff" clipDistance="150" nodeId="17" castsShadows="false" receiveShadows="false" materialIds="6">
               <Shape name="hose" shapeId="2" kinematic="true" collisionFilterGroup="0x1034" collisionFilterMask="0xfffffbff" clipDistance="150" nodeId="18" castsShadows="true" receiveShadows="true" materialIds="5"/>
             </Shape>
           </TransformGroup>

@@ -29,6 +29,21 @@ local SlurryPipeManager_mt = Class(SlurryPipeManager)
 SlurryPipeManager.FILL_VOLUME_SEARCH_RADIUS = 3.0   -- XZ radius for vehicle fill volume (nurse tank) detection only
 SlurryPipeManager.DEFAULT_LITERS_PER_SECOND = 1000
 
+-- Module-level node search — finds all nodes named 'name' under root.
+-- Used by registerVehicle and registerPlaceable.
+local function spsFindAllInTree(root, name, results)
+    local stack = { root }
+    while #stack > 0 do
+        local node = table.remove(stack)
+        if getName(node) == name then
+            table.insert(results, node)
+        end
+        for i = 0, getNumOfChildren(node) - 1 do
+            table.insert(stack, getChildAt(node, i))
+        end
+    end
+end
+
 function SlurryPipeManager.new()
     local self = setmetatable({}, SlurryPipeManager_mt)
     self.registeredVehicles    = {}
@@ -48,6 +63,8 @@ function SlurryPipeManager.new()
     self.pipeColors                 = {}   -- {name, r, g, b} loaded from spsColors.xml
     self.currentPipeColorIndex      = 1
     self.currentPipeColor           = { r = 0, g = 0.05, b = 0 }  -- default green until XML loads
+    self.agitationEnabled           = true
+    self._lastMonotonicDay          = nil  -- tracked to detect day transitions
     SlurryDebug.log("SlurryPipeManager created")
     return self
 end
@@ -88,61 +105,79 @@ end
 function SlurryPipeManager:loadVehicleConfigs(modDirectory)
     self.modDirectory = modDirectory
     local configDir   = modDirectory .. "configs/vehicleConfigs/"
-    local level1      = Files.new(configDir)
-    if level1 == nil then
-        SlurryDebug.log("loadVehicleConfigs - could not open " .. configDir)
+    local manifestPath = modDirectory .. "configs/spsConfigManifest.xml"
+    local xmlFile = XMLFile.load("spsManifest", manifestPath)
+    if xmlFile == nil then
+        SlurryDebug.log("loadVehicleConfigs - could not load manifest: " .. manifestPath)
         return
     end
-    for _, entry in pairs(level1.files) do
-        if entry.isDirectory then
-            local folderName  = entry.filename
+    local idx = 0
+    while true do
+        local key = string.format("spsConfigManifest.vehicleConfigs.folder(%d)", idx)
+        if not xmlFile:hasProperty(key) then break end
+        local folderName = xmlFile:getString(key .. "#name")
+        if folderName ~= nil and folderName ~= "" then
             local xmlFilePath = configDir .. folderName .. "/fillPoints.xml"
             if fileExists(xmlFilePath) then
                 self.vehicleConfigMap[folderName] = { xmlFilePath = xmlFilePath, folderName = folderName }
                 SlurryDebug.log("SlurryPipeManager: found vehicle config for '" .. folderName .. "'")
+            else
+                SlurryDebug.log("SlurryPipeManager: manifest entry '" .. folderName .. "' has no fillPoints.xml, skipping")
             end
         end
+        idx = idx + 1
     end
+    xmlFile:delete()
     local vcCount = 0
     for _ in pairs(self.vehicleConfigMap) do vcCount = vcCount + 1 end
     SlurryDebug.log("SlurryPipeManager: loaded " .. tostring(vcCount) .. " vehicle configs")
 end
 
 function SlurryPipeManager:loadPlaceableConfigs(modDirectory)
-    local configDir = modDirectory .. "configs/placeableConfigs/"
-    local level1    = Files.new(configDir)
-    if level1 == nil then
-        SlurryDebug.log("loadPlaceableConfigs - could not open " .. configDir)
+    local configDir    = modDirectory .. "configs/placeableConfigs/"
+    local manifestPath = modDirectory .. "configs/spsConfigManifest.xml"
+    local xmlFile = XMLFile.load("spsManifest", manifestPath)
+    if xmlFile == nil then
+        SlurryDebug.log("loadPlaceableConfigs - could not load manifest: " .. manifestPath)
         return
     end
-    for _, entry in pairs(level1.files) do
-        if entry.isDirectory then
-            local folderPath = configDir .. entry.filename .. "/"
-            local directXml  = folderPath .. "fillPoints.xml"
+    local idx = 0
+    while true do
+        local key = string.format("spsConfigManifest.placeableConfigs.folder(%d)", idx)
+        if not xmlFile:hasProperty(key) then break end
+        local folderName = xmlFile:getString(key .. "#name")
+        if folderName ~= nil and folderName ~= "" then
+            local directXml = configDir .. folderName .. "/fillPoints.xml"
             if fileExists(directXml) then
-                -- Legacy / single-placeable folder: key = folder name (e.g. baseTank)
-                local key = entry.filename
-                self.placeableConfigMap[key] = { xmlFilePath = directXml, folderName = key }
-                SlurryDebug.log("loadPlaceableConfigs: config '" .. key .. "'")
+                self.placeableConfigMap[folderName] = { xmlFilePath = directXml, folderName = folderName }
+                SlurryDebug.log("loadPlaceableConfigs: config '" .. folderName .. "'")
             else
                 -- Mod-name folder containing per-placeable subfolders
-                -- e.g. FS25_UKStyleBuilding/cowShedUK/fillPoints.xml -> key = "cowShedUK"
-                local level2 = Files.new(folderPath)
-                if level2 ~= nil then
-                    for _, sub in pairs(level2.files) do
-                        if sub.isDirectory then
-                            local subXml = folderPath .. sub.filename .. "/fillPoints.xml"
-                            if fileExists(subXml) then
-                                local key = sub.filename
-                                self.placeableConfigMap[key] = { xmlFilePath = subXml, folderName = key }
-                                SlurryDebug.log("loadPlaceableConfigs: config '" .. key .. "' in " .. entry.filename)
-                            end
+                local subDir = configDir .. folderName .. "/"
+                local subIdx = 0
+                while true do
+                    local sk      = string.format("spsConfigManifest.placeableConfigs.folder(%d).folder(%d)", idx, subIdx)
+                    local subName = xmlFile:getString(sk .. "#name", nil)
+                    if subName == nil then break end
+                    if subName ~= "" then
+                        local subXml = subDir .. subName .. "/fillPoints.xml"
+                        if fileExists(subXml) then
+                            self.placeableConfigMap[subName] = { xmlFilePath = subXml, folderName = subName }
+                            SlurryDebug.log("loadPlaceableConfigs: config '" .. subName .. "' in " .. folderName)
+                        else
+                            SlurryDebug.log("loadPlaceableConfigs: no fillPoints.xml for sub '" .. subName .. "' in " .. folderName)
                         end
                     end
+                    subIdx = subIdx + 1
+                end
+                if subIdx == 0 then
+                    SlurryDebug.log("loadPlaceableConfigs: no sub-folders found for '" .. folderName .. "', skipping")
                 end
             end
         end
+        idx = idx + 1
     end
+    xmlFile:delete()
     local pcCount = 0
     for _ in pairs(self.placeableConfigMap) do pcCount = pcCount + 1 end
     SlurryDebug.log("loadPlaceableConfigs: loaded " .. tostring(pcCount) .. " placeable configs")
@@ -247,6 +282,7 @@ function SlurryPipeManager:registerVehicle(vehicle)
         litersPerSecond       = xmlFile:getFloat("slurryPipeSystem.flow#litersPerSecond", SlurryPipeManager.DEFAULT_LITERS_PER_SECOND),
         selfPowered           = xmlFile:getBool("slurryPipeSystem.pump#selfPowered", false),
         conduit               = xmlFile:getBool("slurryPipeSystem.pump#conduit", false),
+        agitatorOnly          = xmlFile:getBool("slurryPipeSystem#agitatorOnly", false),
         nodeTreeRoot          = nil,
         sourceEntry           = nil,
         state = {
@@ -303,7 +339,9 @@ function SlurryPipeManager:registerVehicle(vehicle)
                                 table.insert(children, getChildAt(container, childIdx))
                             end
                             for _, spsNode in ipairs(children) do
+                                removeFromPhysics(spsNode)
                                 link(liveParent, spsNode)
+                                addToPhysics(spsNode)
                                 table.insert(entry.linkedNodes, spsNode)
                             end
                         else
@@ -540,10 +578,23 @@ function SlurryPipeManager:registerVehicle(vehicle)
                 fillUnitIndex       = xmlFile:getInt(cKey .. "#fillUnitIndex", 1),
                 valveFromRearControl = xmlFile:getBool(cKey .. "#valveFromRearControl", false),
                 connectorType       = xmlFile:getString(cKey .. "#connector", "male"),
+                connectorAnimationId = xmlFile:getInt(cKey .. "#connectorAnimation"),
+                valveAnimationId     = xmlFile:getInt(cKey .. "#valveAnimation"),
                 isConnected         = false,
                 connectedTarget     = nil,
                 sourceEntry         = nil,
             }
+            -- Bind coupler animations if either id is declared on this coupling.
+            if SPSCouplerAnimator ~= nil
+            and (couplingEntry.connectorAnimationId ~= nil or couplingEntry.valveAnimationId ~= nil) then
+                SPSCouplerAnimator.ensureLoaded(self.modDirectory)
+                if couplingEntry.connectorAnimationId ~= nil then
+                    couplingEntry.connectorAnim = SPSCouplerAnimator.bind(couplingEntry.mountNode, couplingEntry.connectorAnimationId)
+                end
+                if couplingEntry.valveAnimationId ~= nil then
+                    couplingEntry.valveAnim = SPSCouplerAnimator.bind(couplingEntry.mountNode, couplingEntry.valveAnimationId)
+                end
+            end
             table.insert(entry.couplingEntries, couplingEntry)
         else
             print("[SPS] pipeCoupling id=" .. tostring(couplingId) .. " mountNode not found, skipping")
@@ -661,6 +712,26 @@ function SlurryPipeManager:registerVehicle(vehicle)
     entry.hudExtension = nil
     if entry.conduit and vehicle.isClient and SPSConduitHUDExtension ~= nil then
         entry.hudExtension = SPSConduitHUDExtension.new(vehicle)
+    end
+
+    -- Agitator: optional tip node declared in fillPoints.xml
+    -- Works for any vehicle type — no specialization required
+    entry.agitatorTipNode = nil
+    entry.agitatorIsActive = false
+    local agitatorTipNodeName = xmlFile:getString("slurryPipeSystem.agitator#tipNode", nil)
+    if agitatorTipNodeName ~= nil then
+        local compRoot = vehicle.components ~= nil and vehicle.components[1] ~= nil
+            and vehicle.components[1].node or nil
+        if compRoot ~= nil then
+            local matches = {}
+            spsFindAllInTree(compRoot, agitatorTipNodeName, matches)
+            if #matches > 0 then
+                entry.agitatorTipNode = matches[1]
+                SlurryDebug.log("registerVehicle: agitator tipNode '" .. agitatorTipNodeName .. "' found for " .. tostring(vehicle.configFileName))
+            else
+                print("[SPS] registerVehicle: agitator tipNode '" .. agitatorTipNodeName .. "' not found in " .. tostring(vehicle.configFileName))
+            end
+        end
     end
 
     table.insert(self.registeredVehicles, entry)
@@ -798,7 +869,9 @@ function SlurryPipeManager:registerPlaceable(placeable)
                                 table.insert(children, getChildAt(container, childIdx))
                             end
                             for _, spsNode in ipairs(children) do
+                                removeFromPhysics(spsNode)
                                 link(liveParent, spsNode)
+                                addToPhysics(spsNode)
                                 table.insert(linkedNodes, spsNode)
                             end
                         else
@@ -865,8 +938,13 @@ function SlurryPipeManager:registerPlaceable(placeable)
     while true do
         local hKey = string.format("slurryPipeSystem.hideCollisions.node(%d)", hideCollIndex)
         if not xmlFile:hasProperty(hKey) then break end
-        local nodeName = xmlFile:getString(hKey .. "#name")
-        if nodeName ~= nil and nodeName ~= "" then
+        local nodeName  = xmlFile:getString(hKey .. "#name")
+        -- Try i3d index path first (node="0>18|0|2|0|5|1"), then fall back to name search
+        local indexNode = xmlFile:getNode(hKey .. "#node", nil, placeable.components, placeable.i3dMappings)
+        if indexNode ~= nil and indexNode ~= 0 then
+            removeFromPhysics(indexNode)
+            table.insert(hiddenCollisions, indexNode)
+        elseif nodeName ~= nil and nodeName ~= "" then
             local compRoot = placeable.components ~= nil
                 and placeable.components[1] ~= nil
                 and placeable.components[1].node or nil
@@ -887,6 +965,11 @@ function SlurryPipeManager:registerPlaceable(placeable)
     end
 
     local fillPlaneNode = xmlFile:getNode("slurryPipeSystem.fillPlane#node", nil, placeable.components, placeable.i3dMappings)
+    print("[SPS fillPlane debug] " .. tostring(placeable.configFileName)
+        .. " fillPlaneNode=" .. tostring(fillPlaneNode)
+        .. " components=" .. tostring(placeable.components ~= nil)
+        .. " i3dMappings=" .. tostring(placeable.i3dMappings ~= nil)
+        .. " nodeAttr=" .. tostring(xmlFile:getString("slurryPipeSystem.fillPlane#node", "MISSING")))
     local minY          = xmlFile:getFloat("slurryPipeSystem.fillPlane#minY", 0)
     local maxY          = xmlFile:getFloat("slurryPipeSystem.fillPlane#maxY", 1)
     local fillTypeName  = xmlFile:getString("slurryPipeSystem.fillPlane#fillType", "LIQUIDMANURE")
@@ -937,6 +1020,31 @@ function SlurryPipeManager:registerPlaceable(placeable)
     local sourceEntry = nil
     if fillPlaneNode ~= nil and (placeable.spec_silo ~= nil or placeable.spec_husbandry ~= nil or placeable.spec_siloExtension ~= nil) then
         sourceEntry = SlurryNodeUtil.buildStoragePlaneSource(placeable, fillPlaneNode, minY, maxY, fillType, planeBounds)
+    elseif fillPlaneNode == nil and placeable.spec_husbandry ~= nil then
+        -- No fill plane authored — husbandry placeable with coupling-only access.
+        -- Build a minimal sourceEntry so coupling flow can read/write the storage
+        -- even though arm surface detection is not possible.
+        local storage = nil
+        local sh = placeable.spec_husbandry
+        if sh.storage ~= nil and type(sh.storage.getFillLevel) == "function" then
+            storage = sh.storage
+        end
+        if storage ~= nil then
+            sourceEntry = {
+                type      = SlurryNodeUtil.SOURCE_TYPE_STORAGE_PLANE,
+                placeable = placeable,
+                storage   = storage,
+                fillPlaneNode = nil,
+                minY      = 0,
+                maxY      = 1,
+                fillType  = fillType,
+                planeBounds = nil,
+                debugLabel = tostring(placeable.configFileName):match("([^/]+)%.xml$") or "placeable",
+            }
+            SlurryDebug.log("registerPlaceable: husbandry coupling-only sourceEntry for " .. tostring(placeable.configFileName))
+        else
+            SlurryDebug.log("registerPlaceable: no storage found for husbandry placeable " .. tostring(placeable.configFileName))
+        end
     end
     if sourceEntry ~= nil then
         table.insert(self.sourceEntries, sourceEntry)
@@ -988,29 +1096,81 @@ function SlurryPipeManager:registerPlaceable(placeable)
 
         if mountNode ~= nil then
             local deployable = xmlFile:getBool(cKey .. "#deployable", false)
+
+            -- undeployedVisibleNodes: space-separated list of node names.
+            -- Searches deep through all linked node subtrees (not just direct links).
+            local function findDeepLinkedNode(name)
+                if name == nil or name == "" then return nil end
+                for _, root in ipairs(linkedNodes) do
+                    local function deepSearch(n)
+                        if n == nil or n == 0 then return nil end
+                        if getName(n) == name then return n end
+                        for i = 0, getNumOfChildren(n) - 1 do
+                            local found = deepSearch(getChildAt(n, i))
+                            if found ~= nil then return found end
+                        end
+                        return nil
+                    end
+                    local found = deepSearch(root)
+                    if found ~= nil then return found end
+                end
+                return nil
+            end
+
+            local undeployedVisibleNodes = {}
+            local undeployedStr = xmlFile:getString(cKey .. "#undeployedVisibleNode", nil)
+            if undeployedStr ~= nil then
+                for nodeName in undeployedStr:gmatch("%S+") do
+                    local n = findDeepLinkedNode(nodeName)
+                    if n ~= nil then
+                        table.insert(undeployedVisibleNodes, n)
+                    else
+                        print("[SPS] registerPlaceable: undeployedVisibleNode '" .. nodeName .. "' not found for coupling id=" .. tostring(couplingId))
+                    end
+                end
+            end
+
             local sc = {
-                id              = couplingId,
-                mountNode       = mountNode,
-                arcNode         = arcNode,
-                valveType       = xmlFile:getString(cKey .. "#valveType", SPS_VALVE_TYPE_MANUAL),
-                flowDirection   = xmlFile:getString(cKey .. "#flowDirection", "BOTH"),
-                connectorType   = xmlFile:getString(cKey .. "#connector", "female"),
-                isConnected     = false,
-                valveOpen       = false,
-                connectedTarget = nil,
+                id                       = couplingId,
+                mountNode                = mountNode,
+                arcNode                  = arcNode,
+                valveType                = xmlFile:getString(cKey .. "#valveType", SPS_VALVE_TYPE_MANUAL),
+                flowDirection            = xmlFile:getString(cKey .. "#flowDirection", "BOTH"),
+                connectorType            = xmlFile:getString(cKey .. "#connector", "female"),
+                connectorAnimationId     = xmlFile:getInt(cKey .. "#connectorAnimation"),
+                valveAnimationId         = xmlFile:getInt(cKey .. "#valveAnimation"),
+                isConnected              = false,
+                valveOpen                = false,
+                connectedTarget          = nil,
                 connectedPartnerCoupling = nil,
-                pipeId          = nil,
-                sourceEntry     = sourceEntry,
-                placeable       = placeable,
-                deployable      = deployable,
-                isDeployed      = not deployable,
-                pipeEffects     = nil,
-                inletDistance   = 1.5,
-                effectPlaying   = false,
+                pipeId                   = nil,
+                sourceEntry              = sourceEntry,
+                placeable                = placeable,
+                deployable               = deployable,
+                isDeployed               = not deployable,
+                pipeEffects              = nil,
+                inletDistance            = 1.5,
+                effectPlaying            = false,
+                undeployedVisibleNodes   = undeployedVisibleNodes,
             }
-            -- Deployable couplings start hidden
+            -- Bind coupler animations if either id is declared on this coupling.
+            if SPSCouplerAnimator ~= nil
+            and (sc.connectorAnimationId ~= nil or sc.valveAnimationId ~= nil) then
+                SPSCouplerAnimator.ensureLoaded(self.modDirectory)
+                if sc.connectorAnimationId ~= nil then
+                    sc.connectorAnim = SPSCouplerAnimator.bind(sc.mountNode, sc.connectorAnimationId)
+                end
+                if sc.valveAnimationId ~= nil then
+                    sc.valveAnim = SPSCouplerAnimator.bind(sc.mountNode, sc.valveAnimationId)
+                end
+            end
+            -- Deployable couplings start hidden; undeployedVisibleNodes start visible
             if deployable then
                 setVisibility(sc.mountNode, false)
+                removeFromPhysics(sc.mountNode)
+                for _, n in ipairs(undeployedVisibleNodes) do
+                    setVisibility(n, true)
+                end
             end
 
             -- Build inlet pipe effects for this coupling if declared
@@ -1129,7 +1289,7 @@ function SlurryPipeManager:registerPlaceable(placeable)
         couplingIndex = couplingIndex + 1
     end
 
-    table.insert(self.registeredPlaceables, {
+    local pEntry = {
         placeable        = placeable,
         config           = config,
         sourceEntry      = sourceEntry,
@@ -1137,14 +1297,44 @@ function SlurryPipeManager:registerPlaceable(placeable)
         linkedNodes      = linkedNodes,
         hiddenNodes      = hiddenNodes,
         hiddenCollisions = hiddenCollisions,
+        agitatorEnabled  = xmlFile:getBool("slurryPipeSystem#agitator", false),
+        crustConfig      = SPSCrustVegetation ~= nil and SPSCrustVegetation.readConfig(xmlFile) or nil,
+        crustInstances   = nil,
         pipeAnimNode     = xmlFile:getNode("slurryPipeSystem.pipeAnimNode#node", nil, placeable.components, placeable.i3dMappings),
         pipeAnimRX       = math.rad(xmlFile:getFloat("slurryPipeSystem.pipeAnimNode#rx", 0)),
         pipeAnimRY       = math.rad(xmlFile:getFloat("slurryPipeSystem.pipeAnimNode#ry", 0)),
         pipeAnimRZ       = math.rad(xmlFile:getFloat("slurryPipeSystem.pipeAnimNode#rz", 0)),
-    })
+    }
+    table.insert(self.registeredPlaceables, pEntry)
     xmlFile:delete()
     SlurryDebug.log("registerPlaceable - registered " .. tostring(placeable.configFileName))
+
+    -- Restore saved thickness for this placeable if available
+    if self._pendingThickness ~= nil and sourceEntry ~= nil then
+        local compNode = placeable.components ~= nil and placeable.components[1] ~= nil
+            and placeable.components[1].node or nil
+        if compNode ~= nil then
+            local px, py, pz = getWorldTranslation(compNode)
+            for i, pt in ipairs(self._pendingThickness) do
+                local dx, dy, dz = px - pt.px, py - pt.py, pz - pt.pz
+                if (dx*dx + dy*dy + dz*dz) <= 1.0 then
+                    sourceEntry.thickness        = pt.thickness
+                    sourceEntry.thicknessDayCount = pt.dayCount
+                    table.remove(self._pendingThickness, i)
+                    SlurryDebug.log("[SPS Thickness] restored " .. string.format("%.1f", pt.thickness * 100)
+                        .. "% for " .. tostring(placeable.configFileName))
+                    break
+                end
+            end
+        end
+    end
+
     self:tryResolvePendingConnections()
+
+    -- Scatter crust vegetation on the fill plane if configured
+    if pEntry.crustConfig ~= nil and SPSCrustVegetation ~= nil then
+        SPSCrustVegetation.initForPlaceable(pEntry, self.modDirectory)
+    end
 end
 
 -- ---------------------------------------------------------------------------
@@ -1173,6 +1363,7 @@ function SlurryPipeManager:unregisterPlaceable(placeable)
                 for _, nodeId in ipairs(entry.hiddenNodes) do
                     if nodeId ~= nil and nodeId ~= 0 then
                         setVisibility(nodeId, true)
+                        addToPhysics(nodeId)
                     end
                 end
             end
@@ -1187,6 +1378,9 @@ function SlurryPipeManager:unregisterPlaceable(placeable)
                 for _, nodeId in ipairs(entry.linkedNodes) do
                     if nodeId ~= nil and nodeId ~= 0 then delete(nodeId) end
                 end
+            end
+            if SPSCrustVegetation ~= nil then
+                SPSCrustVegetation.deleteForPlaceable(entry)
             end
             table.remove(self.registeredPlaceables, i)
             return
@@ -1300,6 +1494,28 @@ function SlurryPipeManager:saveCouplingConnections(savePath)
     end
 
     xmlFile:setInt("slurryPipeSystem#selectedColorIndex", self.currentPipeColorIndex)
+    xmlFile:setBool("slurryPipeSystem#agitationEnabled", self.agitationEnabled)
+
+    -- Save per-placeable slurry thickness and day counter
+    local thickIdx = 0
+    for _, pEntry in ipairs(self.registeredPlaceables) do
+        if pEntry.sourceEntry ~= nil and pEntry.sourceEntry.type == SlurryNodeUtil.SOURCE_TYPE_STORAGE_PLANE then
+            local se  = pEntry.sourceEntry
+            local wx, wy, wz = 0, 0, 0
+            if pEntry.placeable ~= nil and pEntry.placeable.components ~= nil
+            and pEntry.placeable.components[1] ~= nil then
+                wx, wy, wz = getWorldTranslation(pEntry.placeable.components[1].node)
+            end
+            local base = string.format("slurryPipeSystem.thicknesses.entry(%d)", thickIdx)
+            xmlFile:setFloat(base .. "#px",            wx)
+            xmlFile:setFloat(base .. "#py",            wy)
+            xmlFile:setFloat(base .. "#pz",            wz)
+            xmlFile:setFloat(base .. "#thickness",     se.thickness or 0)
+            xmlFile:setInt(base   .. "#dayCount",      se.thicknessDayCount or 0)
+            thickIdx = thickIdx + 1
+        end
+    end
+
     xmlFile:save()
     xmlFile:delete()
     print("[SPS] saveCouplingConnections: saved " .. written .. " connections, "
@@ -1412,10 +1628,31 @@ function SlurryPipeManager:loadCouplingConnections(savePath)
         deployIdx = deployIdx + 1
     end
 
+    -- Restore agitation toggle
+    self.agitationEnabled = xmlFile:getBool("slurryPipeSystem#agitationEnabled", true)
+
+    -- Load thickness data into a pending map keyed by rounded placeable position
+    -- Actual application happens in tryResolvePendingConnections after placeables register
+    self._pendingThickness = {}
+    local thickIdx = 0
+    while true do
+        local base = string.format("slurryPipeSystem.thicknesses.entry(%d)", thickIdx)
+        if not xmlFile:hasProperty(base) then break end
+        table.insert(self._pendingThickness, {
+            px        = xmlFile:getFloat(base .. "#px",        0),
+            py        = xmlFile:getFloat(base .. "#py",        0),
+            pz        = xmlFile:getFloat(base .. "#pz",        0),
+            thickness = xmlFile:getFloat(base .. "#thickness", 0),
+            dayCount  = xmlFile:getInt(base   .. "#dayCount",  0),
+        })
+        thickIdx = thickIdx + 1
+    end
+
     xmlFile:delete()
     print("[SPS] loadCouplingConnections: loaded " .. #self.pendingConnections
         .. " connections, " .. #self.pendingChains .. " chains, "
-        .. #self.pendingDeployedCouplings .. " deployed couplings")
+        .. #self.pendingDeployedCouplings .. " deployed couplings, "
+        .. #self._pendingThickness .. " thickness entries")
 end
 
 -- Called at the end of registerVehicle and registerPlaceable.
@@ -1496,7 +1733,7 @@ function SlurryPipeManager:tryResolvePendingConnections()
             self:applyConnectCouplings(cA, cB, ownerA, ownerB)
             self.currentPipeColor = savedColor
             if pending.valveOpen then
-                self:applyValveState(ownerAv, cA.id, true)
+                self:applyValveState(ownerAv, cA.id, true, cA)
             end
             table.insert(resolved, pending)
         end
@@ -1575,6 +1812,17 @@ function SlurryPipeManager:applyCouplingDeployState(placeable, couplingId, isDep
                 if sc.id == couplingId then
                     sc.isDeployed = isDeployed
                     setVisibility(sc.mountNode, isDeployed)
+                    if isDeployed then
+                        addToPhysics(sc.mountNode)
+                    else
+                        removeFromPhysics(sc.mountNode)
+                    end
+                    -- Swap undeployedVisibleNodes — visible when NOT deployed
+                    if sc.undeployedVisibleNodes ~= nil then
+                        for _, n in ipairs(sc.undeployedVisibleNodes) do
+                            setVisibility(n, not isDeployed)
+                        end
+                    end
                     -- On undeploy: reset anim node once so Giants animation can take back control
                     if not isDeployed and pEntry.pipeAnimNode ~= nil and pEntry.pipeAnimNode ~= 0 then
                         setRotation(pEntry.pipeAnimNode, 0, 0, 0)
@@ -1616,6 +1864,11 @@ function SlurryPipeManager:onChainStartLaying(coupling, anchorActivatable)
     else
         chain:startLaying(mx, my, mz, mry)
     end
+
+    -- Play connector animation forward on the anchor coupling (no-op if not bound).
+    if SPSCouplerAnimator ~= nil and coupling.connectorAnim ~= nil then
+        SPSCouplerAnimator.play(coupling.connectorAnim, 1)
+    end
 end
 
 -- Keep old name as alias for compatibility
@@ -1626,6 +1879,10 @@ end
 -- Called by anchor SPSChainActivatable after all segments removed.
 -- Removes the empty chain from the manager.
 function SlurryPipeManager:onChainEmpty(chain, coupling)
+    -- Play connector animation reverse on the anchor coupling (no-op if not bound).
+    if SPSCouplerAnimator ~= nil and coupling ~= nil and coupling.connectorAnim ~= nil then
+        SPSCouplerAnimator.play(coupling.connectorAnim, -1)
+    end
     for i, c in ipairs(self.pipeChains) do
         if c == chain then
             chain:delete()
@@ -1670,6 +1927,13 @@ end
 function SlurryPipeManager:getVehicleEntry(vehicle)
     for _, entry in ipairs(self.registeredVehicles) do
         if entry.vehicle == vehicle then return entry end
+    end
+    return nil
+end
+
+function SlurryPipeManager:getPlaceableEntry(placeable)
+    for _, entry in ipairs(self.registeredPlaceables) do
+        if entry.placeable == placeable then return entry end
     end
     return nil
 end
@@ -1734,6 +1998,13 @@ function SlurryPipeManager:isVehicleSelfPowered(vehicle)
         if entry.vehicle == vehicle then
             return entry.selfPowered == true
         end
+    end
+    return false
+end
+
+function SlurryPipeManager:isVehicleAgitatorOnly(vehicle)
+    for _, entry in ipairs(self.registeredVehicles) do
+        if entry.vehicle == vehicle then return entry.agitatorOnly == true end
     end
     return false
 end
@@ -2249,7 +2520,8 @@ function SlurryPipeManager:applyConnectCouplings(couplingA, couplingB, ownerA, o
             if #segs > 0 then nodeB = segs[#segs].endConnectors end
         end
         local startConnType = (couplingA.connectorType ~= nil) and couplingA.connectorType or "male"
-        local inst = g_spsPipeVisual:createPipe(nodeA, nodeB, startConnType)
+        local endConnType   = (couplingB.connectorType ~= nil) and couplingB.connectorType or "female"
+        local inst = g_spsPipeVisual:createPipe(nodeA, nodeB, startConnType, endConnType)
         if inst ~= nil then
             local pipeId = self._nextPipeId
             self._nextPipeId = self._nextPipeId + 1
@@ -2287,6 +2559,12 @@ function SlurryPipeManager:applyConnectCouplings(couplingA, couplingB, ownerA, o
         end
     else
         print("[SPS] applyConnectCouplings: WARNING g_spsPipeVisual not ready, no visual created")
+    end
+
+    -- Play connector animations forward on both ends (no-op if not bound).
+    if SPSCouplerAnimator ~= nil then
+        if couplingA.connectorAnim ~= nil then SPSCouplerAnimator.play(couplingA.connectorAnim, 1) end
+        if couplingB.connectorAnim ~= nil then SPSCouplerAnimator.play(couplingB.connectorAnim, 1) end
     end
 
 end
@@ -2359,6 +2637,9 @@ function SlurryPipeManager:applyDisconnect(vehicle, couplingId, couplingObj)
         self:stopFlow(vehicle)
     end
 
+    -- Capture valveOpen state before clearing so we know whether to play valveAnim reverse
+    local wasValveOpen = (coupling.valveOpen == true) or (partner ~= nil and partner.valveOpen == true)
+
     -- Clear state on both ends
     coupling.isConnected             = false
     coupling.valveOpen               = false
@@ -2376,19 +2657,35 @@ function SlurryPipeManager:applyDisconnect(vehicle, couplingId, couplingObj)
         print("[SPS] applyDisconnect: WARNING no partner found for coupling id=" .. tostring(couplingId))
     end
 
+    -- Play connector animations reverse on both ends (no-op if not bound).
+    -- Also play valve animations reverse if the valve was open at disconnect time —
+    -- so the valve handle returns to closed regardless of which side initiates removal.
+    if SPSCouplerAnimator ~= nil then
+        if coupling.connectorAnim ~= nil then SPSCouplerAnimator.play(coupling.connectorAnim, -1) end
+        if partner ~= nil and partner.connectorAnim ~= nil then SPSCouplerAnimator.play(partner.connectorAnim, -1) end
+        if wasValveOpen then
+            if coupling.valveAnim ~= nil then SPSCouplerAnimator.play(coupling.valveAnim, -1) end
+            if partner ~= nil and partner.valveAnim ~= nil then SPSCouplerAnimator.play(partner.valveAnim, -1) end
+        end
+    end
+
 end
 
 function SlurryPipeManager:onValveOpen(vehicle, coupling)
     if not coupling.isConnected then return end
     if coupling.valveOpen then return end
 
+    print(string.format("[SPS valve] onValveOpen: coupling.id=%s isChainTerminus=%s partner.id=%s",
+        tostring(coupling.id), tostring(coupling.isChainTerminus),
+        tostring(coupling.connectedPartnerCoupling and coupling.connectedPartnerCoupling.id or nil)))
+
     if g_server == nil then
-        SlurryValveStateEvent.sendEvent(vehicle, coupling.id, true)
+        SlurryValveStateEvent.sendEvent(vehicle, coupling, true)
         return
     end
 
-    self:applyValveState(vehicle, coupling.id, true)
-    SlurryValveStateEvent.sendEvent(vehicle, coupling.id, true)
+    self:applyValveState(vehicle, coupling.id, true, coupling)
+    SlurryValveStateEvent.sendEvent(vehicle, coupling, true)
 
     -- Propagate through chain: if the connected partner is a chain terminus,
     -- walk to the far end and open that coupling too.
@@ -2400,12 +2697,12 @@ function SlurryPipeManager:onValveClose(vehicle, coupling)
     if not coupling.valveOpen then return end
 
     if g_server == nil then
-        SlurryValveStateEvent.sendEvent(vehicle, coupling.id, false)
+        SlurryValveStateEvent.sendEvent(vehicle, coupling, false)
         return
     end
 
-    self:applyValveState(vehicle, coupling.id, false)
-    SlurryValveStateEvent.sendEvent(vehicle, coupling.id, false)
+    self:applyValveState(vehicle, coupling.id, false, coupling)
+    SlurryValveStateEvent.sendEvent(vehicle, coupling, false)
 
     -- Propagate through chain: if the connected partner is a chain terminus,
     -- walk to the far end and close that coupling too.
@@ -2416,7 +2713,13 @@ end
 -- then apply and broadcast the valve state to it.
 function SlurryPipeManager:_propagateValveState(coupling, open)
     local partner = coupling.connectedPartnerCoupling
-    if partner == nil then return end
+    if partner == nil then
+        print("[SPS valve] _propagateValveState: partner is nil, abort")
+        return
+    end
+
+    print(string.format("[SPS valve] _propagateValveState: partner.id=%s isChainTerminus=%s partner.chain=%s",
+        tostring(partner.id), tostring(partner.isChainTerminus), tostring(partner.chain ~= nil)))
 
     -- Find the far-end coupling by walking: if partner is a chain terminus,
     -- get the chain, find the other terminus that is connected, open/close it.
@@ -2425,6 +2728,8 @@ function SlurryPipeManager:_propagateValveState(coupling, open)
         local chain = partner.chain
         -- Walk all terminus entries for this chain looking for the connected far end
         for _, ct in ipairs(self.chainTerminusEntries) do
+            print(string.format("[SPS valve]   walk: ct.id=%s ct.chain=match=%s ct.isConnected=%s ct~=partner=%s",
+                tostring(ct.id), tostring(ct.chain == chain), tostring(ct.isConnected), tostring(ct ~= partner)))
             if ct ~= partner and ct.chain == chain and ct.isConnected then
                 farEnd = ct
                 break
@@ -2445,12 +2750,19 @@ function SlurryPipeManager:_propagateValveState(coupling, open)
         end
     end
 
-    if farEnd == nil then return end
-    if farEnd.valveOpen == open then return end
+    if farEnd == nil then
+        print("[SPS valve] _propagateValveState: farEnd is nil, abort")
+        return
+    end
+    if farEnd.valveOpen == open then
+        print("[SPS valve] _propagateValveState: farEnd already in target state, abort")
+        return
+    end
 
-    self:applyValveState(nil, farEnd.id, open)
+    print(string.format("[SPS valve] _propagateValveState: forwarding to farEnd.id=%s", tostring(farEnd.id)))
+    self:applyValveState(nil, farEnd.id, open, farEnd)
     local farVehicle, _ = self:_findCouplingOwner(farEnd)
-    SlurryValveStateEvent.sendEvent(farVehicle, farEnd.id, open)
+    SlurryValveStateEvent.sendEvent(farVehicle, farEnd, open)
 end
 
 -- Force-disconnect regardless of valve state — used when vehicle is unregistered
@@ -2510,8 +2822,15 @@ function SlurryPipeManager:applyConnect(vehicleA, targetObject, targetType, coup
     self:applyConnectCouplings(couplingA, couplingB, ownerA, ownerB)
 end
 
-function SlurryPipeManager:applyValveState(vehicle, couplingId, isOpen)
-    local coupling = self:_findCouplingById(vehicle, couplingId, false)
+function SlurryPipeManager:applyValveState(vehicle, couplingId, isOpen, couplingObj)
+    -- Object-first: when caller has the coupling table, use it directly to avoid
+    -- id ambiguity across multiple placeables that share coupling ids.
+    local coupling = couplingObj
+    local foundIn = "objectArg"
+    if coupling == nil then
+        coupling = self:_findCouplingById(vehicle, couplingId, false)
+        foundIn = "vehicle"
+    end
     if coupling == nil then
         -- Try placeable
         for _, pEntry in ipairs(self.registeredPlaceables) do
@@ -2520,15 +2839,35 @@ function SlurryPipeManager:applyValveState(vehicle, couplingId, isOpen)
                     if sc.id == couplingId then coupling = sc break end
                 end
             end
-            if coupling ~= nil then break end
+            if coupling ~= nil then foundIn = "placeable" break end
         end
     end
-    if coupling == nil then return end
+    -- Try chain terminus entries (chain start couplings have id=-2, segment chain
+    -- couplings use segment-index ids — neither lives in vehicle/placeable lists)
+    if coupling == nil then
+        for _, ct in ipairs(self.chainTerminusEntries) do
+            if ct.id == couplingId then coupling = ct foundIn = "chainTerminus" break end
+        end
+    end
+    if coupling == nil then
+        print(string.format("[SPS valve] applyValveState: coupling.id=%s NOT FOUND", tostring(couplingId)))
+        return
+    end
+
+    print(string.format("[SPS valve] applyValveState: id=%s found in %s, isOpen=%s, partner.id=%s",
+        tostring(coupling.id), foundIn, tostring(isOpen),
+        tostring(coupling.connectedPartnerCoupling and coupling.connectedPartnerCoupling.id or nil)))
 
     coupling.valveOpen = isOpen
 
     -- Also sync the partner coupling valve so both ends agree
     local partner = coupling.connectedPartnerCoupling
+    -- Special case: chain start couplings are linked to the placeable anchor via
+    -- the chain object, not via connectedPartnerCoupling. Use the chain anchor as
+    -- the effective partner so the placeable's valve handle animation fires.
+    if partner == nil and coupling.isChainStart and coupling.chain ~= nil then
+        partner = coupling.chain.anchorCoupling
+    end
     if partner ~= nil then
         partner.valveOpen = isOpen
     end
@@ -2542,6 +2881,19 @@ function SlurryPipeManager:applyValveState(vehicle, couplingId, isOpen)
         end
     end
 
+    -- Play valve animations (no-op if not bound).
+    if SPSCouplerAnimator ~= nil then
+        local dir = isOpen and 1 or -1
+        if coupling.valveAnim ~= nil then
+            print(string.format("[SPS valve] applyValveState: playing valveAnim on coupling.id=%s", tostring(couplingId)))
+            SPSCouplerAnimator.play(coupling.valveAnim, dir)
+        end
+        if partner ~= nil and partner.valveAnim ~= nil then
+            print(string.format("[SPS valve] applyValveState: playing valveAnim on partner.id=%s", tostring(partner.id)))
+            SPSCouplerAnimator.play(partner.valveAnim, dir)
+        end
+    end
+
 end
 
 -- ---------------------------------------------------------------------------
@@ -2550,43 +2902,119 @@ end
 function SlurryPipeManager:update(dt)
 	self._updateCount = (self._updateCount or 0) + 1
     if self._updateCount == 1 then print("[SPS] update() is running") end
+
+    -- Tick coupler animations (connector + valve, vehicles + placeables).
+    -- Each instance is a no-op when not playing.
+    if SPSCouplerAnimator ~= nil then
+        for _, vEntry in ipairs(self.registeredVehicles) do
+            if vEntry.couplingEntries ~= nil then
+                for _, c in ipairs(vEntry.couplingEntries) do
+                    if c.connectorAnim ~= nil then SPSCouplerAnimator.update(c.connectorAnim, dt) end
+                    if c.valveAnim     ~= nil then SPSCouplerAnimator.update(c.valveAnim,     dt) end
+                end
+            end
+        end
+        for _, pEntry in ipairs(self.registeredPlaceables) do
+            if pEntry.storeCouplings ~= nil then
+                for _, c in ipairs(pEntry.storeCouplings) do
+                    if c.connectorAnim ~= nil then SPSCouplerAnimator.update(c.connectorAnim, dt) end
+                    if c.valveAnim     ~= nil then SPSCouplerAnimator.update(c.valveAnim,     dt) end
+                end
+            end
+        end
+    end
     
     -- Conduit HUD: addInfoExtension must be called every frame.
-    -- The controlled vehicle is the tractor — walk its attached implements
-    -- to find a registered conduit pump.
-    if g_currentMission ~= nil and g_currentMission.controlledVehicle ~= nil then
-        local cv = g_currentMission.controlledVehicle
-        if self._updateCount % 60 == 0 then
-            print("[SPS HUD] cv=" .. tostring(cv.configFileName))
-            print("[SPS HUD] isConduit(cv)=" .. tostring(self:isVehicleConduit(cv)))
-            if cv.getChildVehicles ~= nil then
-                for _, child in ipairs(cv:getChildVehicles()) do
-                    print("[SPS HUD] child=" .. tostring(child.configFileName) .. " isConduit=" .. tostring(self:isVehicleConduit(child)))
+    -- g_currentMission.controlledVehicle is always nil in FS25 — use
+    -- getIsActiveForInput to detect when the player is in the pump's cab.
+    if g_currentMission ~= nil then
+        for _, entry in ipairs(self.registeredVehicles) do
+            if entry.conduit and entry.hudExtension ~= nil and entry.vehicle.isClient then
+                if entry.vehicle:getIsActiveForInput(false) then
+                    g_currentMission.hud:addInfoExtension(entry.hudExtension)
                 end
-            else
-                print("[SPS HUD] getChildVehicles nil on cv")
-            end
-        end
-        local conduitVehicle = nil
-        if self:isVehicleConduit(cv) then
-            conduitVehicle = cv
-        elseif cv.getChildVehicles ~= nil then
-            for _, child in ipairs(cv:getChildVehicles()) do
-                if self:isVehicleConduit(child) then
-                    conduitVehicle = child
-                    break
-                end
-            end
-        end
-        if conduitVehicle ~= nil then
-            local entry = self:getVehicleEntry(conduitVehicle)
-            if entry ~= nil and entry.hudExtension ~= nil then
-                g_currentMission.hud:addInfoExtension(entry.hudExtension)
             end
         end
     end
  
-    -- Retry pending connection/chain resolution for the first ~5 seconds after load.
+    -- Slurry thickness: accumulate per placeable sourceEntry each game day.
+    -- One full period (daysPerPeriod days) = +10% thickness.
+    -- Only runs server-side, agitationEnabled must be true.
+    if g_server ~= nil and self.agitationEnabled and g_currentMission ~= nil and g_currentMission.environment ~= nil then
+        local env     = g_currentMission.environment
+        local today   = env.currentMonotonicDay
+        local dpp     = env.daysPerPeriod or 28
+        if self._lastMonotonicDay == nil then
+            self._lastMonotonicDay = today
+        elseif today ~= self._lastMonotonicDay then
+            self._lastMonotonicDay = today
+            -- Increment each placeable sourceEntry's day counter
+            for _, pEntry in ipairs(self.registeredPlaceables) do
+                if pEntry.agitatorEnabled and pEntry.sourceEntry ~= nil and pEntry.sourceEntry.type == SlurryNodeUtil.SOURCE_TYPE_STORAGE_PLANE then
+                    local se = pEntry.sourceEntry
+                    se.thicknessDayCount = (se.thicknessDayCount or 0) + 1
+                    if se.thicknessDayCount >= dpp then
+                        se.thicknessDayCount = 0
+                        se.thickness = math.min(1.0, MathUtil.round((se.thickness or 0) + 0.1, 1))
+                        SlurryDebug.log("[SPS Thickness] " .. tostring(pEntry.placeable.configFileName)
+                            .. " thickness now " .. string.format("%.1f", (se.thickness or 0) * 100) .. "%")
+                        if SPSCrustVegetation ~= nil then
+                            SPSCrustVegetation.updateVisibility(pEntry)
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    -- Manager-driven agitator: runs for any registered vehicle with an agitatorTipNode.
+    -- No specialization required — works for any vehicle type including ModHub mods.
+    if g_server ~= nil and self.agitationEnabled then
+        local env       = g_currentMission ~= nil and g_currentMission.environment or nil
+        local timeScale = env ~= nil and env.timeAdjustment or 1
+        local dtHours   = (dt * 0.001) * timeScale / 3600
+        for _, vEntry in ipairs(self.registeredVehicles) do
+            if vEntry.agitatorTipNode ~= nil then
+                local tipNode = vEntry.agitatorTipNode
+                local ptoOk   = SlurryPipeSystemOverride.isPTOConnected(vEntry.vehicle)
+                local motorOk = false
+                local root    = vEntry.vehicle:getRootVehicle()
+                if root ~= nil and root.getIsMotorStarted ~= nil then
+                    motorOk = root:getIsMotorStarted()
+                end
+                local wasActive = vEntry.agitatorIsActive
+                if ptoOk and motorOk then
+                    -- Find matching sourceEntry by bounds and surface Y
+                    local tx, ty, tz   = getWorldTranslation(tipNode)
+                    local foundEntry   = nil
+                    for _, pEntry in ipairs(self.registeredPlaceables) do
+                        local se = pEntry.sourceEntry
+                        if se ~= nil and se.type == SlurryNodeUtil.SOURCE_TYPE_STORAGE_PLANE
+                        and se.planeBounds ~= nil then
+                            if SlurryNodeUtil.isNodeInPlaneBounds(tipNode, se.planeBounds) then
+                                local surfY = SlurryNodeUtil.getSurfaceWorldY(se, tx, tz)
+                                if surfY ~= -math.huge and ty <= surfY then
+                                    foundEntry = se
+                                    break
+                                end
+                            end
+                        end
+                    end
+                    vEntry.agitatorIsActive = foundEntry ~= nil
+                    if foundEntry ~= nil then
+                        self:applyAgitation(foundEntry, dtHours)
+                    end
+                else
+                    vEntry.agitatorIsActive = false
+                end
+                -- Sync state change to clients
+                if vEntry.agitatorIsActive ~= wasActive then
+                    SlurryAgitatorEvent.sendEvent(vEntry.vehicle, vEntry.agitatorIsActive)
+                end
+            end
+        end
+    end
+
     -- Vehicle positions are not finalised at onFinishedLoading time so the coupling
     -- position check in tryResolvePendingConnections can fail at registration. By
     -- retrying each tick until vehicles have settled, we catch late-registering vehicles.
@@ -3130,6 +3558,17 @@ function SlurryPipeManager:tickFlow(session, dt)
         end
         if freeCapacity <= 0 then return end
         local amount = math.min(session.baseLitersPerSecond * dt * 0.001, sourceLevel, freeCapacity)
+        -- Apply thickness multiplier from source storage
+        if srcEntry.type == SlurryNodeUtil.SOURCE_TYPE_STORAGE_PLANE then
+            local mult = self:getFlowRateMultiplier(srcEntry)
+            if mult <= 0 then
+                if vehicle.isClient then
+                    g_currentMission:showBlinkingWarning(g_i18n:getText("warning_spsSlurryTooThick"), 2000)
+                end
+                return
+            end
+            amount = amount * mult
+        end
         if amount <= 0 then return end
         self:removeFromSource(srcEntry, amount, fillType, vehicle)
         self:addToSource(dstEntry, amount, fillType, vehicle)
@@ -3157,6 +3596,17 @@ function SlurryPipeManager:tickFlow(session, dt)
         end
         local rate = session.baseLitersPerSecond * dt * 0.001
         if state.direction == SPS_DIRECTION_FILL then
+            local extSrc = self:resolveExternalSource(vehicle)
+            if extSrc ~= nil then
+                local mult = self:getFlowRateMultiplier(extSrc)
+                if mult <= 0 then
+                    if vehicle.isClient then
+                        g_currentMission:showBlinkingWarning(g_i18n:getText("warning_spsSlurryTooThick"), 2000)
+                    end
+                    return
+                end
+                rate = rate * mult
+            end
             self:transferFill(vehicle, session, rate, fillType)
         else
             self:transferDischarge(vehicle, session, rate, fillType)
@@ -3192,6 +3642,17 @@ function SlurryPipeManager:tickFlow(session, dt)
         if not pumpRunning then return end
         local rate = session.baseLitersPerSecond * dt * 0.001
         if state.direction == SPS_DIRECTION_FILL then
+            local extSrc = self:resolveExternalSource(vehicle)
+            if extSrc ~= nil then
+                local mult = self:getFlowRateMultiplier(extSrc)
+                if mult <= 0 then
+                    if vehicle.isClient then
+                        g_currentMission:showBlinkingWarning(g_i18n:getText("warning_spsSlurryTooThick"), 2000)
+                    end
+                    return
+                end
+                rate = rate * mult
+            end
             self:transferFill(vehicle, session, rate, fillType)
         else
             self:transferDischarge(vehicle, session, rate, fillType)
@@ -3200,7 +3661,62 @@ function SlurryPipeManager:tickFlow(session, dt)
 end
 
 -- ---------------------------------------------------------------------------
--- Transfer functions
+-- Slurry thickness
+-- ---------------------------------------------------------------------------
+
+-- Returns a 0.0-1.0 multiplier for flow rate based on sourceEntry thickness.
+-- thickness 0.0-0.8 : linear reduction (0% thick = full flow, 80% thick = 20% flow)
+-- thickness >= 0.9  : no flow
+function SlurryPipeManager:getFlowRateMultiplier(sourceEntry)
+    if not self.agitationEnabled then return 1.0 end
+    if sourceEntry == nil then return 1.0 end
+    if sourceEntry.type ~= SlurryNodeUtil.SOURCE_TYPE_STORAGE_PLANE then return 1.0 end
+    local t = sourceEntry.thickness or 0
+    if t >= 0.9 then return 0.0 end
+    -- Linear: each 10% thickness = 10% flow reduction, capped at 80%
+    return math.max(0.0, 1.0 - math.min(t, 0.8))
+end
+
+-- Returns a warning level string for the given sourceEntry thickness.
+-- "none", "thickening", "tooThick"
+function SlurryPipeManager:getThicknessWarning(sourceEntry)
+    if not self.agitationEnabled then return "none" end
+    if sourceEntry == nil then return "none" end
+    if sourceEntry.type ~= SlurryNodeUtil.SOURCE_TYPE_STORAGE_PLANE then return "none" end
+    local t = sourceEntry.thickness or 0
+    if t >= 0.9 then return "tooThick" end
+    if t >= 0.8 then return "thickening" end
+    return "none"
+end
+
+-- Called by SlurryAgitator spec each tick while actively stirring.
+-- dtHours: game hours elapsed this tick (dt * 0.001 / 3600 * timeScale).
+-- Reduces thickness by dtHours / hoursPerTenPercent where
+-- hoursPerTenPercent = daysPerPeriod * 24 / 10 — matching the accumulation rate.
+function SlurryPipeManager:applyAgitation(sourceEntry, dtHours)
+    if not self.agitationEnabled then return end
+    if sourceEntry == nil then return end
+    if sourceEntry.type ~= SlurryNodeUtil.SOURCE_TYPE_STORAGE_PLANE then return end
+    if (sourceEntry.thickness or 0) <= 0 then return end
+    local env = g_currentMission ~= nil and g_currentMission.environment or nil
+    local dpp = (env ~= nil and env.daysPerPeriod or 28)
+    local hoursPerTenPercent = dpp * 24 / 10
+    local reduction = dtHours / hoursPerTenPercent
+    sourceEntry.thickness = math.max(0.0, (sourceEntry.thickness or 0) - reduction)
+    SlurryDebug.log("[SPS Agitation] thickness now " .. string.format("%.2f", (sourceEntry.thickness or 0) * 100) .. "%")
+    -- Update vegetation visibility for the matching placeable
+    if SPSCrustVegetation ~= nil then
+        for _, pEntry in ipairs(self.registeredPlaceables) do
+            if pEntry.sourceEntry == sourceEntry then
+                SPSCrustVegetation.updateVisibility(pEntry)
+                break
+            end
+        end
+    end
+end
+
+-- ---------------------------------------------------------------------------
+-- Transfer functions (existing)
 -- ---------------------------------------------------------------------------
 function SlurryPipeManager:transferFill(vehicle, session, delta, fillType)
     local extSource = self:resolveExternalSource(vehicle)

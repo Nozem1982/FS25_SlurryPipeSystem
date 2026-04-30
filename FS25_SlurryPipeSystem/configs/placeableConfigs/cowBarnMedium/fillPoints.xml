@@ -5,10 +5,10 @@
 <!-- Author: Oscar Mods -->
 <!-- Version: 1.0.0.0 -->
 
-<slurryPipeSystem>
+<slurryPipeSystem agitator="false">
 
     <nodeTree filename="nodeTree.i3d"/>
-
+	
     <pipeCouplings>
 
         <pipeCoupling
@@ -19,6 +19,8 @@
             deployable="false"
             maxPipeLength="4.0"
 			connector="male"
+			connectorAnimation="1"
+			valveAnimation="2"
         />
 
     </pipeCouplings>
