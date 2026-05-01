@@ -240,13 +240,12 @@ function SPSChainActivatable:_onLongPress()
         elseif self.chain ~= nil and self.chain.dockingStation == nil then
             self.chain:addDockingStation()
         end
-    elseif state == "dockingStationClosed" then
-        if self.chain ~= nil and self.chain.anchorCoupling ~= nil then
-            self.chain.anchorCoupling.valveOpen = true
-        end
-    elseif state == "dockingStationOpen" then
-        if self.chain ~= nil and self.chain.anchorCoupling ~= nil then
-            self.chain.anchorCoupling.valveOpen = false
+    elseif state == "dockingStationClosed" or state == "dockingStationOpen" then
+        -- DS prompt long-press always removes the docking station. Valve state
+        -- is auto-controlled by addDockingStation/_removeDockingStation; the
+        -- player does not toggle it independently.
+        if self.chain ~= nil and self.chain.dockingStation ~= nil then
+            self.chain:removeDockingStation()
         end
     elseif state == "connectedValveClosed" then
         -- Anchor (arcIndex==0) toggles via the chain's last (far-end) segment

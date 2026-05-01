@@ -104,7 +104,7 @@ end
 -- ---------------------------------------------------------------------------
 function SlurryPipeManager:loadVehicleConfigs(modDirectory)
     self.modDirectory = modDirectory
-    local configDir   = modDirectory .. "configs/vehicleConfigs/"
+    local configRoot   = modDirectory .. "configs/"
     local manifestPath = modDirectory .. "configs/spsConfigManifest.xml"
     local xmlFile = XMLFile.load("spsManifest", manifestPath)
     if xmlFile == nil then
@@ -113,16 +113,35 @@ function SlurryPipeManager:loadVehicleConfigs(modDirectory)
     end
     local idx = 0
     while true do
-        local key = string.format("spsConfigManifest.vehicleConfigs.folder(%d)", idx)
+        local key = string.format("spsConfigManifest.vehicleConfigs.vehicle(%d)", idx)
         if not xmlFile:hasProperty(key) then break end
-        local folderName = xmlFile:getString(key .. "#name")
-        if folderName ~= nil and folderName ~= "" then
-            local xmlFilePath = configDir .. folderName .. "/fillPoints.xml"
-            if fileExists(xmlFilePath) then
-                self.vehicleConfigMap[folderName] = { xmlFilePath = xmlFilePath, folderName = folderName }
-                SlurryDebug.log("SlurryPipeManager: found vehicle config for '" .. folderName .. "'")
+
+        local matchPath = xmlFile:getString(key .. "#path")
+        if matchPath ~= nil and matchPath ~= "" then
+            -- Bundled fillPoints.xml location:
+            --   default: derived from matchPath by stripping the trailing XML filename
+            --   override: optional configFolder attribute on the manifest entry
+            -- The override is needed when a modder ships multiple XMLs in a shared
+            -- folder (e.g. mods/X/xml/A.xml and mods/X/xml/B.xml) — auto-derivation
+            -- would collide on the same fillPoints folder, so each entry must
+            -- explicitly declare its own bundled location.
+            local cfgDir = xmlFile:getString(key .. "#configFolder")
+            if cfgDir == nil or cfgDir == "" then
+                cfgDir = matchPath:match("^(.*)/[^/]+%.xml$")
+            end
+            if cfgDir == nil then
+                SlurryDebug.log("loadVehicleConfigs: malformed path '" .. matchPath .. "'")
             else
-                SlurryDebug.log("SlurryPipeManager: manifest entry '" .. folderName .. "' has no fillPoints.xml, skipping")
+                local xmlFilePath = configRoot .. cfgDir .. "/fillPoints.xml"
+                if fileExists(xmlFilePath) then
+                    self.vehicleConfigMap[matchPath:lower()] = {
+                        xmlFilePath = xmlFilePath,
+                        matchPath   = matchPath,
+                    }
+                    SlurryDebug.log("loadVehicleConfigs: registered '" .. matchPath .. "' -> " .. xmlFilePath)
+                else
+                    SlurryDebug.log("loadVehicleConfigs: no fillPoints.xml at " .. xmlFilePath .. " (manifest path '" .. matchPath .. "')")
+                end
             end
         end
         idx = idx + 1
@@ -134,7 +153,7 @@ function SlurryPipeManager:loadVehicleConfigs(modDirectory)
 end
 
 function SlurryPipeManager:loadPlaceableConfigs(modDirectory)
-    local configDir    = modDirectory .. "configs/placeableConfigs/"
+    local configRoot   = modDirectory .. "configs/"
     local manifestPath = modDirectory .. "configs/spsConfigManifest.xml"
     local xmlFile = XMLFile.load("spsManifest", manifestPath)
     if xmlFile == nil then
@@ -143,35 +162,28 @@ function SlurryPipeManager:loadPlaceableConfigs(modDirectory)
     end
     local idx = 0
     while true do
-        local key = string.format("spsConfigManifest.placeableConfigs.folder(%d)", idx)
+        local key = string.format("spsConfigManifest.placeableConfigs.placeable(%d)", idx)
         if not xmlFile:hasProperty(key) then break end
-        local folderName = xmlFile:getString(key .. "#name")
-        if folderName ~= nil and folderName ~= "" then
-            local directXml = configDir .. folderName .. "/fillPoints.xml"
-            if fileExists(directXml) then
-                self.placeableConfigMap[folderName] = { xmlFilePath = directXml, folderName = folderName }
-                SlurryDebug.log("loadPlaceableConfigs: config '" .. folderName .. "'")
+
+        local matchPath = xmlFile:getString(key .. "#path")
+        if matchPath ~= nil and matchPath ~= "" then
+            -- See loadVehicleConfigs for the configFolder override rationale.
+            local cfgDir = xmlFile:getString(key .. "#configFolder")
+            if cfgDir == nil or cfgDir == "" then
+                cfgDir = matchPath:match("^(.*)/[^/]+%.xml$")
+            end
+            if cfgDir == nil then
+                SlurryDebug.log("loadPlaceableConfigs: malformed path '" .. matchPath .. "'")
             else
-                -- Mod-name folder containing per-placeable subfolders
-                local subDir = configDir .. folderName .. "/"
-                local subIdx = 0
-                while true do
-                    local sk      = string.format("spsConfigManifest.placeableConfigs.folder(%d).folder(%d)", idx, subIdx)
-                    local subName = xmlFile:getString(sk .. "#name", nil)
-                    if subName == nil then break end
-                    if subName ~= "" then
-                        local subXml = subDir .. subName .. "/fillPoints.xml"
-                        if fileExists(subXml) then
-                            self.placeableConfigMap[subName] = { xmlFilePath = subXml, folderName = subName }
-                            SlurryDebug.log("loadPlaceableConfigs: config '" .. subName .. "' in " .. folderName)
-                        else
-                            SlurryDebug.log("loadPlaceableConfigs: no fillPoints.xml for sub '" .. subName .. "' in " .. folderName)
-                        end
-                    end
-                    subIdx = subIdx + 1
-                end
-                if subIdx == 0 then
-                    SlurryDebug.log("loadPlaceableConfigs: no sub-folders found for '" .. folderName .. "', skipping")
+                local xmlFilePath = configRoot .. cfgDir .. "/fillPoints.xml"
+                if fileExists(xmlFilePath) then
+                    self.placeableConfigMap[matchPath:lower()] = {
+                        xmlFilePath = xmlFilePath,
+                        matchPath   = matchPath,
+                    }
+                    SlurryDebug.log("loadPlaceableConfigs: registered '" .. matchPath .. "' -> " .. xmlFilePath)
+                else
+                    SlurryDebug.log("loadPlaceableConfigs: no fillPoints.xml at " .. xmlFilePath .. " (manifest path '" .. matchPath .. "')")
                 end
             end
         end
@@ -229,25 +241,62 @@ function SlurryPipeManager:setCurrentPipeColor(index)
 end
 function SlurryPipeManager:findVehicleConfigForVehicle(vehicle)
     if vehicle.configFileName == nil then return nil end
-    local vehicleFile = vehicle.configFileName:match("([^/\\]+)%.xml$")
-    if vehicleFile == nil then return nil end
-    SlurryDebug.log("SlurryPipeManager:findVehicleConfigForVehicle searching for '" .. vehicleFile .. "'")
-    for folderName, config in pairs(self.vehicleConfigMap) do
-        if string.find(folderName:lower(), vehicleFile:lower(), 1, true)
-        or string.find(vehicleFile:lower(), folderName:lower(), 1, true) then
-            SlurryDebug.log("SlurryPipeManager:findVehicleConfigForVehicle matched '" .. folderName .. "'")
+
+    -- Embedded config check: does the vehicle's own XML carry a <slurryPipeSystem>
+    -- element? If so, the vehicle is self-contained and overrides any internal
+    -- manifest match. This is what lets third-party modders ship SPS-ready
+    -- vehicles that include their own couplers, animations, and node references
+    -- without ever touching the SPS mod folder.
+    if vehicle.xmlFile ~= nil and vehicle.xmlFile:hasProperty("vehicle.slurryPipeSystem") then
+        SlurryDebug.log("findVehicleConfigForVehicle: embedded <slurryPipeSystem> found in " .. tostring(vehicle.configFileName))
+        return {
+            xmlFilePath  = vehicle.configFileName,    -- used for nodeTree path resolution
+            xmlKeyPrefix = "vehicle.",                -- prepended to every "slurryPipeSystem..." read
+            isEmbedded   = true,
+        }
+    end
+
+    -- Path-tail match against manifest entries. configFileName is the full path
+    -- Giants gives us (e.g. "C:/.../mods/FS25_Pichon_BMIX80/BMIX.xml" or
+    -- "data/vehicles/kaweco/profi2/profi2.xml"). A manifest entry with
+    -- path="data/vehicles/kaweco/profi2/profi2.xml" matches when the vehicle's
+    -- configFileName ENDS with that exact path (case-insensitive). Forward-
+    -- slash-only — Giants always reports forward slashes in paths.
+    local cfn = vehicle.configFileName:lower():gsub("\\", "/")
+    for matchPathLower, config in pairs(self.vehicleConfigMap) do
+        if cfn:sub(-#matchPathLower) == matchPathLower then
+            SlurryDebug.log("findVehicleConfigForVehicle: matched '" .. config.matchPath .. "'")
             return config
         end
     end
-    SlurryDebug.log("SlurryPipeManager:findVehicleConfigForVehicle no match for '" .. vehicleFile .. "'")
+    SlurryDebug.log("findVehicleConfigForVehicle: no match for '" .. vehicle.configFileName .. "'")
     return nil
 end
 
 function SlurryPipeManager:findPlaceableConfigForPlaceable(placeable)
     if placeable.configFileName == nil then return nil end
-    local placeableFile = placeable.configFileName:match("([^/]+)%.xml$")
-    if placeableFile == nil then return nil end
-    return self.placeableConfigMap[placeableFile]
+
+    -- Embedded config check: does the placeable's own XML carry a
+    -- <slurryPipeSystem> element? See findVehicleConfigForVehicle for rationale.
+    if placeable.xmlFile ~= nil and placeable.xmlFile:hasProperty("placeable.slurryPipeSystem") then
+        SlurryDebug.log("findPlaceableConfigForPlaceable: embedded <slurryPipeSystem> found in " .. tostring(placeable.configFileName))
+        return {
+            xmlFilePath  = placeable.configFileName,
+            xmlKeyPrefix = "placeable.",
+            isEmbedded   = true,
+        }
+    end
+
+    -- Path-tail match against manifest entries. Same rule as vehicles.
+    local cfn = placeable.configFileName:lower():gsub("\\", "/")
+    for matchPathLower, config in pairs(self.placeableConfigMap) do
+        if cfn:sub(-#matchPathLower) == matchPathLower then
+            SlurryDebug.log("findPlaceableConfigForPlaceable: matched '" .. config.matchPath .. "'")
+            return config
+        end
+    end
+    SlurryDebug.log("findPlaceableConfigForPlaceable: no match for '" .. placeable.configFileName .. "'")
+    return nil
 end
 
 -- ---------------------------------------------------------------------------
@@ -264,11 +313,24 @@ function SlurryPipeManager:registerVehicle(vehicle)
         return
     end
 
-    local xmlFile = XMLFile.load("spsVehiclePoints", config.xmlFilePath)
+    -- Embedded configs use the vehicle's own xmlFile (already loaded by Giants);
+    -- bundled configs open the SPS-internal fillPoints.xml. Track which one so
+    -- we know whether to call delete() at the end (we MUST NOT delete the
+    -- vehicle's own xmlFile — Giants owns it).
+    local xmlFile
+    local xmlFileOwned = false
+    if config.isEmbedded then
+        xmlFile = vehicle.xmlFile
+    else
+        xmlFile = XMLFile.load("spsVehiclePoints", config.xmlFilePath)
+        xmlFileOwned = true
+    end
     if xmlFile == nil then
         SlurryDebug.log("registerVehicle - XML load failed: " .. tostring(config.xmlFilePath))
         return
     end
+
+    local kp = config.xmlKeyPrefix or ""
 
     local entry = {
         vehicle               = vehicle,
@@ -279,12 +341,14 @@ function SlurryPipeManager:registerVehicle(vehicle)
         receiverEntries       = {},
         rubberBootPortEntries = {},
         pumpControlEntries    = {},
-        litersPerSecond       = xmlFile:getFloat("slurryPipeSystem.flow#litersPerSecond", SlurryPipeManager.DEFAULT_LITERS_PER_SECOND),
-        selfPowered           = xmlFile:getBool("slurryPipeSystem.pump#selfPowered", false),
-        conduit               = xmlFile:getBool("slurryPipeSystem.pump#conduit", false),
-        agitatorOnly          = xmlFile:getBool("slurryPipeSystem#agitatorOnly", false),
+        litersPerSecond       = xmlFile:getFloat(kp .. "slurryPipeSystem.flow#litersPerSecond", SlurryPipeManager.DEFAULT_LITERS_PER_SECOND),
+        selfPowered           = xmlFile:getBool(kp .. "slurryPipeSystem.pump#selfPowered", false),
+        conduit               = xmlFile:getBool(kp .. "slurryPipeSystem.pump#conduit", false),
+        agitatorOnly          = xmlFile:getBool(kp .. "slurryPipeSystem#agitatorOnly", false),
         nodeTreeRoot          = nil,
         sourceEntry           = nil,
+        animationLibrary      = nil,   -- set below: per-vehicle for embedded, bundled for manifest
+        xmlFileOwned          = xmlFileOwned,
         state = {
             pumpRunning       = false,
             valveOpen         = false,
@@ -294,7 +358,7 @@ function SlurryPipeManager:registerVehicle(vehicle)
     }
 
     -- Load nodeTree
-    local nodeTreePath = xmlFile:getString("slurryPipeSystem.nodeTree#filename")
+    local nodeTreePath = xmlFile:getString(kp .. "slurryPipeSystem.nodeTree#filename")
     if nodeTreePath ~= nil then
         local configFolder = config.xmlFilePath:match("^(.*[/\\])")
         local fullPath     = configFolder .. nodeTreePath
@@ -386,7 +450,7 @@ function SlurryPipeManager:registerVehicle(vehicle)
 
     local armIndex = 0
     while true do
-        local armKey = string.format("slurryPipeSystem.fillArms.fillArm(%d)", armIndex)
+        local armKey = string.format(kp .. "slurryPipeSystem.fillArms.fillArm(%d)", armIndex)
         if not xmlFile:hasProperty(armKey) then break end
 
         local armId   = xmlFile:getInt(armKey .. "#id", armIndex + 1)
@@ -552,7 +616,7 @@ function SlurryPipeManager:registerVehicle(vehicle)
     -- Pipe couplings (data loaded for future use; no connection logic active)
     local couplingIndex = 0
     while true do
-        local cKey = string.format("slurryPipeSystem.pipeCouplings.pipeCoupling(%d)", couplingIndex)
+        local cKey = string.format(kp .. "slurryPipeSystem.pipeCouplings.pipeCoupling(%d)", couplingIndex)
         if not xmlFile:hasProperty(cKey) then break end
         local couplingId = xmlFile:getInt(cKey .. "#id", couplingIndex + 1)
 
@@ -587,12 +651,20 @@ function SlurryPipeManager:registerVehicle(vehicle)
             -- Bind coupler animations if either id is declared on this coupling.
             if SPSCouplerAnimator ~= nil
             and (couplingEntry.connectorAnimationId ~= nil or couplingEntry.valveAnimationId ~= nil) then
-                SPSCouplerAnimator.ensureLoaded(self.modDirectory)
+                if entry.animationLibrary == nil then
+                    if config.isEmbedded then
+                        -- Modder ships their own <couplerAnimations> block inside <slurryPipeSystem>
+                        entry.animationLibrary = SPSCouplerAnimator.loadFromXml(xmlFile, kp .. "slurryPipeSystem.couplerAnimations")
+                    else
+                        SPSCouplerAnimator.ensureLoaded(self.modDirectory)
+                        entry.animationLibrary = SPSCouplerAnimator._library
+                    end
+                end
                 if couplingEntry.connectorAnimationId ~= nil then
-                    couplingEntry.connectorAnim = SPSCouplerAnimator.bind(couplingEntry.mountNode, couplingEntry.connectorAnimationId)
+                    couplingEntry.connectorAnim = SPSCouplerAnimator.bind(couplingEntry.mountNode, couplingEntry.connectorAnimationId, entry.animationLibrary)
                 end
                 if couplingEntry.valveAnimationId ~= nil then
-                    couplingEntry.valveAnim = SPSCouplerAnimator.bind(couplingEntry.mountNode, couplingEntry.valveAnimationId)
+                    couplingEntry.valveAnim = SPSCouplerAnimator.bind(couplingEntry.mountNode, couplingEntry.valveAnimationId, entry.animationLibrary)
                 end
             end
             table.insert(entry.couplingEntries, couplingEntry)
@@ -605,7 +677,7 @@ function SlurryPipeManager:registerVehicle(vehicle)
     -- Rubber boot ports
     local rbpIndex = 0
     while true do
-        local rbpKey = string.format("slurryPipeSystem.rubberBootPorts.rubberBootPort(%d)", rbpIndex)
+        local rbpKey = string.format(kp .. "slurryPipeSystem.rubberBootPorts.rubberBootPort(%d)", rbpIndex)
         if not xmlFile:hasProperty(rbpKey) then break end
         local rbpId        = xmlFile:getInt(rbpKey .. "#id", rbpIndex + 1)
         local rbpLowerNode = findLinkedNode(xmlFile:getString(rbpKey .. "#lowerNodeName"))
@@ -631,7 +703,7 @@ function SlurryPipeManager:registerVehicle(vehicle)
     -- Pump controls
     local pcIndex = 0
     while true do
-        local pcKey = string.format("slurryPipeSystem.pumpControls.pumpControl(%d)", pcIndex)
+        local pcKey = string.format(kp .. "slurryPipeSystem.pumpControls.pumpControl(%d)", pcIndex)
         if not xmlFile:hasProperty(pcKey) then break end
         local pcId     = xmlFile:getInt(pcKey .. "#id", pcIndex + 1)
         local pcRadius = xmlFile:getFloat(pcKey .. "#radius", 1.5)
@@ -676,10 +748,10 @@ function SlurryPipeManager:registerVehicle(vehicle)
     -- Load engine loop sound for selfPowered vehicles
     entry.engineLoopSample = nil
     if entry.selfPowered and vehicle.isClient then
-        local soundKey = "slurryPipeSystem.sounds.engineLoop"
+        local soundKey = kp .. "slurryPipeSystem.sounds.engineLoop"
         if xmlFile:hasProperty(soundKey) then
             entry.engineLoopSample = g_soundManager:loadSampleFromXML(
-                xmlFile, "slurryPipeSystem.sounds", "engineLoop",
+                xmlFile, kp .. "slurryPipeSystem.sounds", "engineLoop",
                 vehicle.baseDirectory, vehicle.components, 0,
                 AudioGroup.VEHICLE, vehicle.i3dMappings, vehicle)
             if entry.engineLoopSample ~= nil then
@@ -718,7 +790,7 @@ function SlurryPipeManager:registerVehicle(vehicle)
     -- Works for any vehicle type — no specialization required
     entry.agitatorTipNode = nil
     entry.agitatorIsActive = false
-    local agitatorTipNodeName = xmlFile:getString("slurryPipeSystem.agitator#tipNode", nil)
+    local agitatorTipNodeName = xmlFile:getString(kp .. "slurryPipeSystem.agitator#tipNode", nil)
     if agitatorTipNodeName ~= nil then
         local compRoot = vehicle.components ~= nil and vehicle.components[1] ~= nil
             and vehicle.components[1].node or nil
@@ -735,7 +807,7 @@ function SlurryPipeManager:registerVehicle(vehicle)
     end
 
     table.insert(self.registeredVehicles, entry)
-    xmlFile:delete()
+    if entry.xmlFileOwned then xmlFile:delete() end
     SlurryDebug.log("SlurryPipeManager:registerVehicle - registered " .. tostring(vehicle.configFileName))
     self:tryResolvePendingConnections()
 end
@@ -833,12 +905,23 @@ end
 function SlurryPipeManager:registerPlaceable(placeable)
     local config = self:findPlaceableConfigForPlaceable(placeable)
     if config == nil then return end
-    local xmlFile = XMLFile.load("spsPlaceablePoints", config.xmlFilePath)
+
+    -- Embedded vs bundled xml (see registerVehicle for rationale).
+    local xmlFile
+    local xmlFileOwned = false
+    if config.isEmbedded then
+        xmlFile = placeable.xmlFile
+    else
+        xmlFile = XMLFile.load("spsPlaceablePoints", config.xmlFilePath)
+        xmlFileOwned = true
+    end
     if xmlFile == nil then return end
+
+    local kp = config.xmlKeyPrefix or ""
 
     -- Optional nodeTree: links SPS nodes onto the placeable hierarchy.
     local linkedNodes = {}
-    local nodeTreePath = xmlFile:getString("slurryPipeSystem.nodeTree#filename")
+    local nodeTreePath = xmlFile:getString(kp .. "slurryPipeSystem.nodeTree#filename")
     if nodeTreePath ~= nil then
         local configFolder = config.xmlFilePath:match("^(.*[/\\])")
         local fullPath = configFolder .. nodeTreePath
@@ -908,7 +991,7 @@ function SlurryPipeManager:registerPlaceable(placeable)
     local hiddenNodes = {}
     local hideIndex = 0
     while true do
-        local hKey = string.format("slurryPipeSystem.hideNodes.node(%d)", hideIndex)
+        local hKey = string.format(kp .. "slurryPipeSystem.hideNodes.node(%d)", hideIndex)
         if not xmlFile:hasProperty(hKey) then break end
         local nodeName = xmlFile:getString(hKey .. "#name")
         if nodeName ~= nil and nodeName ~= "" then
@@ -936,7 +1019,7 @@ function SlurryPipeManager:registerPlaceable(placeable)
     local hiddenCollisions = {}
     local hideCollIndex = 0
     while true do
-        local hKey = string.format("slurryPipeSystem.hideCollisions.node(%d)", hideCollIndex)
+        local hKey = string.format(kp .. "slurryPipeSystem.hideCollisions.node(%d)", hideCollIndex)
         if not xmlFile:hasProperty(hKey) then break end
         local nodeName  = xmlFile:getString(hKey .. "#name")
         -- Try i3d index path first (node="0>18|0|2|0|5|1"), then fall back to name search
@@ -964,15 +1047,15 @@ function SlurryPipeManager:registerPlaceable(placeable)
         hideCollIndex = hideCollIndex + 1
     end
 
-    local fillPlaneNode = xmlFile:getNode("slurryPipeSystem.fillPlane#node", nil, placeable.components, placeable.i3dMappings)
+    local fillPlaneNode = xmlFile:getNode(kp .. "slurryPipeSystem.fillPlane#node", nil, placeable.components, placeable.i3dMappings)
     print("[SPS fillPlane debug] " .. tostring(placeable.configFileName)
         .. " fillPlaneNode=" .. tostring(fillPlaneNode)
         .. " components=" .. tostring(placeable.components ~= nil)
         .. " i3dMappings=" .. tostring(placeable.i3dMappings ~= nil)
-        .. " nodeAttr=" .. tostring(xmlFile:getString("slurryPipeSystem.fillPlane#node", "MISSING")))
-    local minY          = xmlFile:getFloat("slurryPipeSystem.fillPlane#minY", 0)
-    local maxY          = xmlFile:getFloat("slurryPipeSystem.fillPlane#maxY", 1)
-    local fillTypeName  = xmlFile:getString("slurryPipeSystem.fillPlane#fillType", "LIQUIDMANURE")
+        .. " nodeAttr=" .. tostring(xmlFile:getString(kp .. "slurryPipeSystem.fillPlane#node", "MISSING")))
+    local minY          = xmlFile:getFloat(kp .. "slurryPipeSystem.fillPlane#minY", 0)
+    local maxY          = xmlFile:getFloat(kp .. "slurryPipeSystem.fillPlane#maxY", 1)
+    local fillTypeName  = xmlFile:getString(kp .. "slurryPipeSystem.fillPlane#fillType", "LIQUIDMANURE")
     local fillType = g_fillTypeManager:getFillTypeIndexByName(fillTypeName) or FillType.LIQUIDMANURE
 
     -- Build XZ detection bounds from authored nodes in the nodeTree.
@@ -980,12 +1063,12 @@ function SlurryPipeManager:registerPlaceable(placeable)
     -- rectangle: centreNode + corner1/2     (bounds in centreNode local space)
     -- Y of these nodes is irrelevant — only XZ is used for detection.
     local planeBounds    = nil
-    local planeShape     = xmlFile:getString("slurryPipeSystem.fillPlane#shape", nil)
-    local centreNodeName = xmlFile:getString("slurryPipeSystem.fillPlane#centreNodeName", nil)
+    local planeShape     = xmlFile:getString(kp .. "slurryPipeSystem.fillPlane#shape", nil)
+    local centreNodeName = xmlFile:getString(kp .. "slurryPipeSystem.fillPlane#centreNodeName", nil)
     local centreNode     = findLinkedNode(centreNodeName)
 
     if planeShape == "round" then
-        local edgeNode = findLinkedNode(xmlFile:getString("slurryPipeSystem.fillPlane#edgeNodeName", nil))
+        local edgeNode = findLinkedNode(xmlFile:getString(kp .. "slurryPipeSystem.fillPlane#edgeNodeName", nil))
         if centreNode ~= nil and edgeNode ~= nil then
             local cx, _, cz = getWorldTranslation(centreNode)
             local ex, _, ez = getWorldTranslation(edgeNode)
@@ -995,8 +1078,8 @@ function SlurryPipeManager:registerPlaceable(placeable)
             print("[SPS] registerPlaceable: shape=round but centreNode or edgeNode missing")
         end
     elseif planeShape == "rectangle" then
-        local corner1Node = findLinkedNode(xmlFile:getString("slurryPipeSystem.fillPlane#corner1NodeName", nil))
-        local corner2Node = findLinkedNode(xmlFile:getString("slurryPipeSystem.fillPlane#corner2NodeName", nil))
+        local corner1Node = findLinkedNode(xmlFile:getString(kp .. "slurryPipeSystem.fillPlane#corner1NodeName", nil))
+        local corner2Node = findLinkedNode(xmlFile:getString(kp .. "slurryPipeSystem.fillPlane#corner2NodeName", nil))
         if centreNode ~= nil and corner1Node ~= nil and corner2Node ~= nil then
             local c1x, c1y, c1z = getWorldTranslation(corner1Node)
             local c2x, c2y, c2z = getWorldTranslation(corner2Node)
@@ -1064,8 +1147,14 @@ function SlurryPipeManager:registerPlaceable(placeable)
         end
     end
 
+    -- Per-placeable animation library: lazy-initialised on the first coupling
+    -- that declares an animation. Embedded configs get their own library
+    -- parsed from inline <couplerAnimations>; bundled configs share the
+    -- SPS-bundled library loaded from configs/couplerAnimations.xml.
+    local animationLibrary = nil
+
     while true do
-        local cKey = string.format("slurryPipeSystem.pipeCouplings.pipeCoupling(%d)", couplingIndex)
+        local cKey = string.format(kp .. "slurryPipeSystem.pipeCouplings.pipeCoupling(%d)", couplingIndex)
         if not xmlFile:hasProperty(cKey) then break end
         local couplingId    = xmlFile:getInt(cKey .. "#id", couplingIndex + 1)
         local mountNodeName = xmlFile:getString(cKey .. "#mountNodeName")
@@ -1156,12 +1245,19 @@ function SlurryPipeManager:registerPlaceable(placeable)
             -- Bind coupler animations if either id is declared on this coupling.
             if SPSCouplerAnimator ~= nil
             and (sc.connectorAnimationId ~= nil or sc.valveAnimationId ~= nil) then
-                SPSCouplerAnimator.ensureLoaded(self.modDirectory)
+                if animationLibrary == nil then
+                    if config.isEmbedded then
+                        animationLibrary = SPSCouplerAnimator.loadFromXml(xmlFile, kp .. "slurryPipeSystem.couplerAnimations")
+                    else
+                        SPSCouplerAnimator.ensureLoaded(self.modDirectory)
+                        animationLibrary = SPSCouplerAnimator._library
+                    end
+                end
                 if sc.connectorAnimationId ~= nil then
-                    sc.connectorAnim = SPSCouplerAnimator.bind(sc.mountNode, sc.connectorAnimationId)
+                    sc.connectorAnim = SPSCouplerAnimator.bind(sc.mountNode, sc.connectorAnimationId, animationLibrary)
                 end
                 if sc.valveAnimationId ~= nil then
-                    sc.valveAnim = SPSCouplerAnimator.bind(sc.mountNode, sc.valveAnimationId)
+                    sc.valveAnim = SPSCouplerAnimator.bind(sc.mountNode, sc.valveAnimationId, animationLibrary)
                 end
             end
             -- Deployable couplings start hidden; undeployedVisibleNodes start visible
@@ -1297,16 +1393,19 @@ function SlurryPipeManager:registerPlaceable(placeable)
         linkedNodes      = linkedNodes,
         hiddenNodes      = hiddenNodes,
         hiddenCollisions = hiddenCollisions,
-        agitatorEnabled  = xmlFile:getBool("slurryPipeSystem#agitator", false),
+        agitatorEnabled  = xmlFile:getBool(kp .. "slurryPipeSystem#agitator", false),
         crustConfig      = SPSCrustVegetation ~= nil and SPSCrustVegetation.readConfig(xmlFile) or nil,
         crustInstances   = nil,
-        pipeAnimNode     = xmlFile:getNode("slurryPipeSystem.pipeAnimNode#node", nil, placeable.components, placeable.i3dMappings),
-        pipeAnimRX       = math.rad(xmlFile:getFloat("slurryPipeSystem.pipeAnimNode#rx", 0)),
-        pipeAnimRY       = math.rad(xmlFile:getFloat("slurryPipeSystem.pipeAnimNode#ry", 0)),
-        pipeAnimRZ       = math.rad(xmlFile:getFloat("slurryPipeSystem.pipeAnimNode#rz", 0)),
+        pipeAnimNode     = xmlFile:getNode(kp .. "slurryPipeSystem.pipeAnimNode#node", nil, placeable.components, placeable.i3dMappings),
+        pipeAnimRX       = math.rad(xmlFile:getFloat(kp .. "slurryPipeSystem.pipeAnimNode#rx", 0)),
+        pipeAnimRY       = math.rad(xmlFile:getFloat(kp .. "slurryPipeSystem.pipeAnimNode#ry", 0)),
+        pipeAnimRZ       = math.rad(xmlFile:getFloat(kp .. "slurryPipeSystem.pipeAnimNode#rz", 0)),
+        config           = config,
+        animationLibrary = animationLibrary,
+        xmlFileOwned     = xmlFileOwned,
     }
     table.insert(self.registeredPlaceables, pEntry)
-    xmlFile:delete()
+    if xmlFileOwned then xmlFile:delete() end
     SlurryDebug.log("registerPlaceable - registered " .. tostring(placeable.configFileName))
 
     -- Restore saved thickness for this placeable if available
@@ -3441,7 +3540,11 @@ function SlurryPipeManager:detectArmConnection(vehicle, entry, arm)
         local shouldPlay  = arm.isConnected and valveOpen and isDischarge and pumpOn and fillLevel > 0
         if shouldPlay then
             if not arm.effectPlaying then
-                g_effectManager:setEffectTypeInfo(entry.pipeEffects, FillType.LIQUIDMANURE)
+                local effectFillType = vehicle:getFillUnitFillType(arm.fillUnitIndex)
+                if effectFillType == nil or effectFillType == FillType.UNKNOWN then
+                    effectFillType = FillType.LIQUIDMANURE
+                end
+                g_effectManager:setEffectTypeInfo(entry.pipeEffects, effectFillType)
                 local pe = entry.pipeEffects[1]
                 print("[SPS] after setEffectTypeInfo: hasValidMaterial=" .. tostring(pe and pe.hasValidMaterial) .. " node=" .. tostring(pe and pe.node))
                 g_effectManager:startEffects(entry.pipeEffects)
@@ -3532,7 +3635,23 @@ function SlurryPipeManager:tickFlow(session, dt)
         local srcEntry = self:resolveSourceForCouplingPartner(srcCoupling)
         local dstEntry = self:resolveSourceForCouplingPartner(dstCoupling)
         if srcEntry == nil or dstEntry == nil then return end
-        local fillType = FillType.LIQUIDMANURE
+
+        -- Resolve fillType from what the source actually holds (LIQUIDMANURE,
+        -- DIGESTATE, etc.). If source is empty, nothing to transfer.
+        local fillType = self:_resolveSourceFillType(srcEntry)
+        if fillType == nil then return end
+
+        -- Verify destination accepts this fillType (right category + free space).
+        if not self:_destAcceptsFillType(dstEntry, fillType) then
+            if not session._loggedTypeMismatch then
+                print(string.format("[SPS] coupling-to-coupling: destination does not accept fillType %s (source=%s, dst=%s)",
+                    tostring(fillType),
+                    tostring(srcEntry.type), tostring(dstEntry.type)))
+                session._loggedTypeMismatch = true
+            end
+            return
+        end
+
         local sourceLevel = 0
         if srcEntry.type == SlurryNodeUtil.SOURCE_TYPE_FILL_VOLUME or srcEntry.type == "FILL_UNIT_ONLY" then
             if srcEntry.vehicle ~= nil then
@@ -3718,6 +3837,52 @@ end
 -- ---------------------------------------------------------------------------
 -- Transfer functions (existing)
 -- ---------------------------------------------------------------------------
+
+-- Returns the fillType currently held by a sourceEntry, or nil if empty.
+-- For vehicle fill units → reads the vehicle's runtime fill type.
+-- For storage planes → walks the storage's fillType list and returns the
+-- first type with level > 0 (multi-type storages are rare; in practice
+-- one type at a time).
+function SlurryPipeManager:_resolveSourceFillType(srcEntry)
+    if srcEntry == nil then return nil end
+    if srcEntry.type == SlurryNodeUtil.SOURCE_TYPE_FILL_VOLUME or srcEntry.type == "FILL_UNIT_ONLY" then
+        if srcEntry.vehicle == nil then return nil end
+        local ft = srcEntry.vehicle:getFillUnitFillType(srcEntry.fillUnitIndex)
+        if ft == nil or ft == FillType.UNKNOWN then return nil end
+        local level = srcEntry.vehicle:getFillUnitFillLevel(srcEntry.fillUnitIndex) or 0
+        if level <= 0 then return nil end
+        return ft
+    elseif srcEntry.type == SlurryNodeUtil.SOURCE_TYPE_STORAGE_PLANE then
+        if srcEntry.storage == nil or srcEntry.storage.fillTypes == nil then return nil end
+        for ft, _ in pairs(srcEntry.storage.fillTypes) do
+            local lvl = srcEntry.storage:getFillLevel(ft) or 0
+            if lvl > 0 then return ft end
+        end
+        return nil
+    end
+    return nil
+end
+
+-- Returns true if the destination entry can accept the given fillType right now
+-- (has free capacity for that specific type).
+function SlurryPipeManager:_destAcceptsFillType(dstEntry, fillType)
+    if dstEntry == nil or fillType == nil then return false end
+    if dstEntry.type == SlurryNodeUtil.SOURCE_TYPE_FILL_VOLUME or dstEntry.type == "FILL_UNIT_ONLY" then
+        if dstEntry.vehicle == nil then return false end
+        if dstEntry.vehicle.getFillUnitAllowsFillType ~= nil then
+            if not dstEntry.vehicle:getFillUnitAllowsFillType(dstEntry.fillUnitIndex, fillType) then return false end
+        end
+        local cap   = dstEntry.vehicle:getFillUnitCapacity(dstEntry.fillUnitIndex) or 0
+        local level = dstEntry.vehicle:getFillUnitFillLevel(dstEntry.fillUnitIndex) or 0
+        return (cap - level) > 0
+    elseif dstEntry.type == SlurryNodeUtil.SOURCE_TYPE_STORAGE_PLANE then
+        if dstEntry.storage == nil then return false end
+        local free = dstEntry.storage:getFreeCapacity(fillType) or 0
+        return free > 0
+    end
+    return false
+end
+
 function SlurryPipeManager:transferFill(vehicle, session, delta, fillType)
     local extSource = self:resolveExternalSource(vehicle)
     if extSource == nil then return end

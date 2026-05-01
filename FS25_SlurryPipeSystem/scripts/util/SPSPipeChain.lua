@@ -497,7 +497,17 @@ function SPSPipeChain:addDockingStation()
     }
 
     if self.anchorCoupling ~= nil then
-        self.anchorCoupling.valveOpen = true
+        -- Open the anchor valve via the manager API so:
+        --   * valveAnim plays forward (handle rotates open)
+        --   * partner valve syncs (chain propagation)
+        --   * SlurryValveStateEvent broadcasts to MP clients
+        if g_slurryPipeManager ~= nil then
+            g_slurryPipeManager:applyValveState(nil, self.anchorCoupling.id, true, self.anchorCoupling)
+            local ownerVehicle, _ = g_slurryPipeManager:_findCouplingOwner(self.anchorCoupling)
+            SlurryValveStateEvent.sendEvent(ownerVehicle, self.anchorCoupling, true)
+        else
+            self.anchorCoupling.valveOpen = true
+        end
     end
 
     print("[SPS] SPSPipeChain: docking station added")
@@ -509,6 +519,16 @@ end
 
 function SPSPipeChain:_removeDockingStation()
     if self.dockingStation == nil then return end
+
+    -- Close the anchor valve via the manager API before teardown so:
+    --   * valveAnim plays reverse (handle rotates back to closed)
+    --   * partner valve syncs
+    --   * SlurryValveStateEvent broadcasts
+    if self.anchorCoupling ~= nil and g_slurryPipeManager ~= nil and self.anchorCoupling.valveOpen then
+        g_slurryPipeManager:applyValveState(nil, self.anchorCoupling.id, false, self.anchorCoupling)
+        local ownerVehicle, _ = g_slurryPipeManager:_findCouplingOwner(self.anchorCoupling)
+        SlurryValveStateEvent.sendEvent(ownerVehicle, self.anchorCoupling, false)
+    end
 
     if g_slurryPipeManager ~= nil then
         local entries = g_slurryPipeManager.rubberBootPortEntries

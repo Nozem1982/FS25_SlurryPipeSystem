@@ -1,45 +1,73 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- FS25_SlurryPipeSystem — Config Manifest -->
-<!-- Add a new entry here whenever a new vehicle or placeable config folder is created -->
+<!--
+================================================================================
+  FS25_SlurryPipeSystem — Config Manifest
+================================================================================
+  Each entry's "path" attribute must EXACTLY match the tail of the runtime
+  vehicle/placeable's configFileName (case-insensitive). When the match
+  succeeds, SPS loads the bundled fillPoints.xml from:
+      configs/<path with the trailing .xml filename stripped>/fillPoints.xml
+
+  Examples:
+      path="data/vehicles/kaweco/profi2/profi2.xml"
+        -> configs/data/vehicles/kaweco/profi2/fillPoints.xml
+
+      path="mods/FS25_Pichon_BMIX80/BMIX.xml"
+        -> configs/mods/FS25_Pichon_BMIX80/fillPoints.xml
+
+  Optional "configFolder" attribute overrides where the bundled fillPoints.xml
+  lives. Use this when a mod ships multiple XMLs in the same folder (the
+  auto-derived bundled folder would collide), or when you want to organise
+  bundled configs differently from the runtime path.
+
+  Example (UK Shed: two placeables share mods/FS25_UKStlyleBuilding/xml/):
+      <placeable path="mods/FS25_UKStlyleBuilding/xml/cowShedUK.xml"
+                 configFolder="mods/FS25_UKStlyleBuilding/xml/cowShedUK"/>
+        -> configs/mods/FS25_UKStlyleBuilding/xml/cowShedUK/fillPoints.xml
+
+  Vehicles or placeables that ship with an embedded <slurryPipeSystem> block
+  inside their own XML do NOT need a manifest entry. The embedded block wins
+  over any manifest entry, scoped to that vehicle instance only.
+================================================================================
+-->
 
 <spsConfigManifest>
 
     <vehicleConfigs>
-        <folder name="at5105"/>
-        <folder name="cobra"/>
-        <folder name="kaweco_profi2"/>
-        <folder name="kotte_frc65"/>
-        <folder name="pq32000"/>
-        <folder name="PTOSlurryPump"/>
-        <folder name="samsonAgro_pgII28Genesis"/>
-        <folder name="tsa"/>
-        <folder name="ult18"/>
-        <folder name="ult24"/>
-		<folder name="FS25_Pichon_BMIX80"/>
+        <!-- Stock vehicles -->
+        <vehicle path="data/vehicles/kaweco/profi2/profi2.xml"/>
+        <vehicle path="data/vehicles/kotte/frc65/frc65.xml"/>
+
+        <!-- Mod vehicles -->
+        <vehicle path="mods/FS25_Joskin_Cobra/cobra.xml"/>
+        <vehicle path="mods/FS25_Kotte_TSA/tsa.xml"/>
+        <vehicle path="mods/FS25_Pichon_BMIX80/BMIX.xml"/>
+        <vehicle path="mods/FS25_Samson_PGIIGenesis_Pack/SamsonPG28/pgII28Genesis.xml"/>
+
+        <!-- PTOSlurryPump uses embedded <slurryPipeSystem>, no manifest entry needed -->
     </vehicleConfigs>
 
     <placeableConfigs>
-        <folder name="baseTank"/>
-        <folder name="cowBarnBig"/>
-        <folder name="cowBarnBigGea"/>
-        <folder name="cowBarnBigVector"/>
-        <folder name="cowBarnMedium"/>
-        <folder name="extensionLarge"/>
-        <folder name="extensionSmall"/>
-        <folder name="FS25_mrhLiquidManureTank">
-            <folder name="liquidManureTank"/>
-        </folder>
-        <folder name="FS25_UKStlyleBuilding">
-            <folder name="cowShedUK"/>
-            <folder name="cowShedUK_nonMilk"/>
-        </folder>
-        <folder name="pigBarnBig"/>
-        <folder name="pigBarnMedium"/>
-		<folder name="Witcombe">
-            <folder name="cowBarn01"/>
-            <folder name="cowBarnParlour"/>
-			<folder name="dairy"/>
-        </folder>
+        <!-- Stock placeables -->
+        <placeable path="data/placeables/brandless/liquidManureTanks/baseTank/baseTank.xml"/>
+        <placeable path="data/placeables/brandless/liquidManureTanks/extensionLarge/extensionLarge.xml"/>
+        <placeable path="data/placeables/brandless/liquidManureTanks/extensionSmall/extensionSmall.xml"/>
+        <placeable path="data/placeables/rudolfHormann/cowBarnBig/cowBarnBig.xml"/>
+        <placeable path="data/placeables/rudolfHormann/cowBarnBig/cowBarnBigGea.xml"/>
+        <placeable path="data/placeables/rudolfHormann/cowBarnBig/cowBarnBigVector.xml"/>
+        <placeable path="data/placeables/rudolfHormann/cowBarnMedium/cowBarnMedium.xml"/>
+        <placeable path="data/placeables/rudolfHormann/pigBarnBig/pigBarnBig.xml"/>
+        <placeable path="data/placeables/rudolfHormann/pigBarnMedium/pigBarnMedium.xml"/>
+
+        <!-- Mod placeables -->
+        <placeable path="mods/FS25_mrhLiquidManureTank/liquidManureTank.xml"
+                   configFolder="mods/FS25_mrhLiquidManureTank/liquidManureTank"/>
+        <placeable path="mods/FS25_UKStlyleBuilding/xml/cowShedUK.xml"
+                   configFolder="mods/FS25_UKStlyleBuilding/xml/cowShedUK"/>
+        <placeable path="mods/FS25_UKStlyleBuilding/xml/cowShedUK_nonMilk.xml"
+                   configFolder="mods/FS25_UKStlyleBuilding/xml/cowShedUK_nonMilk"/>
+        <placeable path="mods/FS25_Witcombe/map/placeables/cowBarn01/cowBarn01.xml"/>
+        <placeable path="mods/FS25_Witcombe/map/placeables/cowBarnParlour/cowBarnParlour.xml"/>
     </placeableConfigs>
-	
+
 </spsConfigManifest>
