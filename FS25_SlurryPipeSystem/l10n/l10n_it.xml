@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<l10n>
+    <texts>
+		<!-- Inputs -->
+		<text name="input_SPS_TOGGLE_PUMP"      		text="SPS Pompa On/Off" />
+		<text name="input_SPS_TOGGLE_FLOW"      		text="SPS Apri/Chiudi flusso" />
+		<text name="input_SPS_TOGGLE_DIRECTION" 		text="SPS Direzione flusso" />
+        
+		<!-- Settings menu -->
+		<text name="sps_settingsHeader"            		text="SISTEMA TUBI LIQUAME" />
+		<text name="sps_settingsSlurryPipe"        		text="Tubo liquame" />
+		<text name="sps_settingsSlurryPipeTooltip" 		text="Seleziona il colore del tubo" />
+		
+		<!-- Pump on/off (TurnOnVehicle override) -->
+        <text name="action_slurryPumpOn"  				text="PTO: Pompa SPENTA" />
+        <text name="action_slurryPumpOff" 				text="PTO: Pompa ACCESA" />
+		
+        <!-- Valve open/close -->
+        <text name="action_slurryFlowOpen"  			text="Valvola idraulica CHIUSA" />
+        <text name="action_slurryFlowClose" 			text="Valvola idraulica APERTA" />
+
+        <!-- Pump direction (shows current, press to switch) -->
+        <text name="action_slurryDirectionFill"      	text="Pompa impostata su SCARICO" />
+        <text name="action_slurryDirectionDischarge"  	text="Pompa impostata su RIEMPIMENTO" />
+
+        <!-- Pipe actions -->
+        <text name="action_spsConnectPipe" 				text="Collega tubo"/>
+		<text name="action_spsDisconnectOrOpenValve" 	text="Scollega [R] | Apri valvola [tieni premuto R]"/>
+		<text name="action_spsCloseValve" 				text="Chiudi valvola [tieni premuto R]"/>
+		<text name="warning_slurryCloseValveFirst" 		text="Chiudi la valvola prima di scollegare"/>
+		<text name="action_spsLayFirstPipe"         	text="Posa il primo tubo" />
+		<text name="action_spsLayPipe"              	text="Posa tubo | Posiziona stazione di aggancio [tieni premuto R]" />
+		<text name="action_spsRemovePipe"           	text="Rimuovi tubo" />
+		<text name="action_spsRemoveDockingStation" 	text="Rimuovi stazione di aggancio" />
+		<text name="action_spsDisconnectPipe" 			text="Scollega tubo" />
+		<text name="action_spsFinalisePipe"  			text="Finalizza tubo [R] | Annulla [tieni premuto R]" />
+		<text name="action_spsDeployCoupling" 			text="Posiziona raccordo tubo [tieni premuto R]"/>
+		<text name="action_spsRemoveCoupling" 			text="Rimuovi raccordo tubo [tieni premuto R]"/>
+		<text name="action_spsRearValveOpen"			text="Apri valvola [R]" />
+		<text name="action_spsRearValveClose"			text="Chiudi valvola [R]" />
+		
+        <!-- Warnings -->
+        <text name="warning_slurryNoConnection"    		text="Nessun collegamento liquame attivo" />
+        <text name="warning_slurryCloseFlowFirst"  		text="Chiudi la valvola prima di cambiare direzione della pompa" />
+        <text name="warning_slurryNoPipeTarget"    		text="Nessun punto di collegamento tubo nel raggio d'azione" />
+		<text name="warning_slurryEngineOff" 			text="Avvia prima il motore"/>
+		<text name="warning_spsPipeTooShort"			text="Allontanati di più per finalizzare il tubo" />
+		<text name="warning_spsConnectHydraulics"		text="Collega prima i tubi idraulici" />
+
+        <!-- PTO Slurry Pump vehicle -->
+        <text name="function_slurryPump"                text="Pompa liquame" />
+        <text name="typeDesc_manurePump"                text="Pompa liquame PTO" />
+
+        <!-- Conduit pump HUD and direction -->
+        <text name="hud_spsConduitPumped"               text="Pompato: %d L" />
+        <text name="action_spsConduitDirAtoB"           text="Flusso: Porta 1 → Porta 2" />
+        <text name="action_spsConduitDirBtoA"           text="Flusso: Porta 2 → Porta 1" />
+		
+		<!-- Spreader valve -->
+        <text name="input_SPS_TOGGLE_SPREADER"          text="SPS Valvola spandiletame" />
+        <text name="action_spsSpreaderOpen"             text="Valvola spandiletame CHIUSA" />
+        <text name="action_spsSpreaderClose"            text="Valvola spandiletame APERTA" />
+
+        <!-- Slurry thickness / agitation -->
+        <text name="warning_spsSlurryThickening"        text="Crosta liquame: %d%% — agitazione consigliata" />
+        <text name="warning_spsSlurryTooThick"          text="Liquame troppo denso — agitazione necessaria" />
+        <text name="sps_settingsAgitation"              text="Agitazione liquame" />
+        <text name="sps_settingsAgitationTooltip"       text="Abilita sistema di addensamento e agitazione del liquame" />
+        <text name="action_spsAgitatorOn"               text="Agitatore: SPENTO — PTO attiva" />
+        <text name="action_spsAgitatorOff"              text="Agitatore: ACCESO — PTO attiva" />
+        <text name="warning_spsAgitatorNotSubmerged"    text="Agitatore non immerso" />
+        <text name="sps_infoThicknessTitle"             text="Densità liquame" />
+    </texts>
+</l10n>

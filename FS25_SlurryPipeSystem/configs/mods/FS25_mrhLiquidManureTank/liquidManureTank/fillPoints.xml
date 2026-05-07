@@ -68,15 +68,15 @@
     </hideCollisions>
 	
 	<crust density="0.3">
-		<plant stage="1" i3d="i3d/foliage/grass01.i3d"  weight="4"/>
-		<plant stage="2" i3d="i3d/foliage/grass02.i3d"  weight="3"/>
-		<plant stage="3" i3d="i3d/foliage/grass03.i3d"  weight="3"/>
-		<plant stage="2" i3d="i3d/foliage/barley01.i3d" weight="2"/>
-		<plant stage="3" i3d="i3d/foliage/barley02.i3d" weight="2"/>
-		<plant stage="3" i3d="i3d/foliage/barley03.i3d" weight="1"/>
-		<plant stage="3" i3d="i3d/foliage/barley04.i3d" weight="1"/>
-		<plant stage="3" i3d="i3d/foliage/mushroom.i3d" weight="1"/>
-		<plant stage="3" i3d="i3d/foliage/nettle.i3d"   weight="1"/>
+		<plant stage="1" i3d="i3d/foliage/grass01.i3d"  weight="6"/>
+		<plant stage="2" i3d="i3d/foliage/grass02.i3d"  weight="5"/>
+		<plant stage="3" i3d="i3d/foliage/grass03.i3d"  weight="5"/>
+		<plant stage="2" i3d="i3d/foliage/barley01.i3d" weight="4"/>
+		<plant stage="3" i3d="i3d/foliage/barley02.i3d" weight="4"/>
+		<plant stage="3" i3d="i3d/foliage/barley03.i3d" weight="3"/>
+		<plant stage="3" i3d="i3d/foliage/barley04.i3d" weight="3"/>
+		<plant stage="3" i3d="i3d/foliage/mushroom.i3d" weight="3"/>
+		<plant stage="3" i3d="i3d/foliage/nettle.i3d"   weight="3"/>
 	</crust>
 	
 </slurryPipeSystem>

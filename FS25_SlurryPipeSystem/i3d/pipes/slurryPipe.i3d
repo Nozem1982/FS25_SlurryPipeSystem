@@ -8,12 +8,11 @@
   <Files>
     <File fileId="4" filename="$data/shaders/vehicleShader.xml"/>
     <File fileId="2" filename="$data/shared/connectionHoses/hosesAtlas_normal.dds"/>
-    <File fileId="3" filename="$data/shared/connectionHoses/hosesAtlas_vmask.dds"/>
     <File fileId="12" filename="$data/shared/default_normal.dds"/>
-    <File fileId="13" filename="$data/shared/default_vmask.dds"/>
-    <File fileId="15" filename="$data/shared/detailLibrary/flat_normal.png"/>
-    <File fileId="16" filename="$data/shared/detailLibrary/metallic/silverScratched_diffuse.png"/>
-    <File fileId="14" filename="$data/shared/detailLibrary/metallic/silverScratched_specular.png"/>
+    <File fileId="3" filename="$data/shared/default_vmask.dds"/>
+    <File fileId="14" filename="$data/shared/detailLibrary/flat_normal.png"/>
+    <File fileId="15" filename="$data/shared/detailLibrary/metallic/silverScratched_diffuse.png"/>
+    <File fileId="13" filename="$data/shared/detailLibrary/metallic/silverScratched_specular.png"/>
     <File fileId="7" filename="$data/shared/detailLibrary/nonMetallic/rubber/rubber_diffuse.dds"/>
     <File fileId="6" filename="$data/shared/detailLibrary/nonMetallic/rubber/rubber_normal.dds"/>
     <File fileId="5" filename="$data/shared/detailLibrary/nonMetallic/rubber/rubber_specular.dds"/>
@@ -22,7 +21,7 @@
 
 
   <Materials>
-    <Material name="hose_mat" materialId="5" customShaderId="4">
+    <Material name="hose_mat" materialId="160" customShaderId="4">
       <Texture fileId="1"/>
       <Normalmap fileId="2"/>
       <Glossmap fileId="3"/>
@@ -31,13 +30,15 @@
       <Custommap name="detailDiffuse" fileId="7"/>
       <CustomParameter name="colorScale" value="0 0.05 0"/>
     </Material>
-    <Material name="silverScratched_mat" materialId="6" customShaderId="4">
+    <Material name="lambert1" materialId="161" diffuseColor="0.8 0.8 0.8 1" specularColor="0.501961 1 0">
+    </Material>
+    <Material name="silverScratched_mat" materialId="162" customShaderId="4">
       <Texture fileId="1"/>
       <Normalmap fileId="12"/>
-      <Glossmap fileId="13"/>
-      <Custommap name="detailSpecular" fileId="14"/>
-      <Custommap name="detailNormal" fileId="15"/>
-      <Custommap name="detailDiffuse" fileId="16"/>
+      <Glossmap fileId="3"/>
+      <Custommap name="detailSpecular" fileId="13"/>
+      <Custommap name="detailNormal" fileId="14"/>
+      <Custommap name="detailDiffuse" fileId="15"/>
     </Material>
   </Materials>
 
@@ -46,77 +47,56 @@
   </Shapes>
 
   <Scene>
-    <TransformGroup name="slurryPipe" translation="-1.95505e-08 0 0" rotation="5.00895e-06 0 -5.00896e-06" nodeId="11">
-      <Shape name="hose" translation="-1.42109e-14 -5.24535e-09 -0.06" rotation="-180 1.86693e-05 180" shapeId="1" clipDistance="150" nodeId="12" castsShadows="true" receiveShadows="true" skinBindNodeIds="15 17 20 22 24 26 28 30 32 34 36 38 40 42 44 49 51" materialIds="5"/>
-      <TransformGroup name="slurryPipeConnectors" translation="1.95505e-08 1.70916e-15 -1.49419e-22" rotation="-5.00895e-06 4.37897e-13 5.00896e-06" nodeId="65">
-        <Shape name="female01" translation="1.30337e-06 2.84217e-13 0" shapeId="2" clipDistance="150" nodeId="80" castsShadows="true" receiveShadows="true" materialIds="6"/>
-        <Shape name="male01" translation="-3.9101e-08 3.48552e-15 -6.37036e-15" rotation="-1.0018e-05 -3.46352e-11 -9.77067e-12" shapeId="3" clipDistance="150" nodeId="13" castsShadows="true" receiveShadows="true" materialIds="6"/>
-        <TransformGroup name="componentJoint1" translation="-1.12736e-09 -4.72127e-07 -0.06" rotation="-180 1.86693e-05 180" nodeId="14">
-          <TransformGroup name="Bone1" translation="1.84231e-08 4.61636e-07 0" nodeId="15"/>
+    <TransformGroup name="slurryPipe" nodeId="170">
+      <Shape name="hose" translation="-6.08346e-08 0 -0.1867" shapeId="1" clipDistance="150" nodeId="171" castsShadows="true" receiveShadows="true" skinBindNodeIds="178 189 190 192 193 195 196 198 199 201 202 204 205 207 208 187" materialIds="160"/>
+      <TransformGroup name="startConnectors" nodeId="172">
+        <Shape name="female01" shapeId="2" clipDistance="150" nodeId="173" castsShadows="false" receiveShadows="false" materialIds="162"/>
+        <Shape name="male01" shapeId="3" clipDistance="150" nodeId="174" castsShadows="false" receiveShadows="false" materialIds="162"/>
+        <TransformGroup name="detectionNode01" nodeId="175">
+          <TransformGroup name="detectionNode02" translation="-1.5 0 2.5" nodeId="176"/>
+          <TransformGroup name="detectionNode03" translation="1.5 0 2.5" nodeId="177"/>
         </TransformGroup>
-        <TransformGroup name="componentJoint2" translation="8.03332e-08 -4.61636e-07 -0.31" rotation="-180 1.86693e-05 180" nodeId="16">
-          <TransformGroup name="Bone2" translation="1.84231e-08 4.61636e-07 -5.41668e-35" rotation="0 -0 1.37935e-33" nodeId="17"/>
+        <TransformGroup name="Bone1" translation="-6.87812e-08 0 -0.1867" nodeId="178">
+          <Shape name="component1" translation="7.9466e-09 0 0" shapeId="4" nodeId="179" castsShadows="false" receiveShadows="false" nonRenderable="true" materialIds="161"/>
         </TransformGroup>
-        <TransformGroup name="bezierStart" translation="-3.9101e-08 3.48552e-15 -6.37036e-15" rotation="-1.0018e-05 -3.46352e-11 -9.77067e-12" nodeId="18"/>
       </TransformGroup>
-      <TransformGroup name="componentJoint3" translation="1.81344e-07 -5.10592e-07 -0.56" rotation="-180 1.86693e-05 180" nodeId="19">
-        <TransformGroup name="Bone3" translation="1.84231e-08 4.61636e-07 0" nodeId="20"/>
-      </TransformGroup>
-      <TransformGroup name="componentJoint4" translation="2.62804e-07 -5.32449e-07 -0.81" rotation="-180 1.86693e-05 180" nodeId="21">
-        <TransformGroup name="Bone4" translation="1.84231e-08 4.61636e-07 -1.625e-34" rotation="0 -0 1.37935e-33" nodeId="22"/>
-      </TransformGroup>
-      <TransformGroup name="componentJoint5" translation="3.44265e-07 -5.54304e-07 -1.06" rotation="-180 1.86693e-05 180" nodeId="23">
-        <TransformGroup name="Bone5" translation="1.84231e-08 4.61636e-07 0" nodeId="24"/>
-      </TransformGroup>
-      <TransformGroup name="componentJoint6" translation="4.25725e-07 -5.76159e-07 -1.31" rotation="-180 1.86693e-05 180" nodeId="25">
-        <TransformGroup name="Bone6" translation="1.84231e-08 4.61636e-07 2.01948e-28" rotation="0 -0 1.37935e-33" nodeId="26"/>
-      </TransformGroup>
-      <TransformGroup name="componentJoint7" translation="5.07185e-07 -5.98016e-07 -1.56" rotation="-180 1.86693e-05 180" nodeId="27">
-        <TransformGroup name="Bone7" translation="1.84231e-08 4.61636e-07 0" nodeId="28"/>
-      </TransformGroup>
-      <TransformGroup name="componentJoint8" translation="5.88646e-07 -6.19871e-07 -1.81" rotation="-180 1.86693e-05 180" nodeId="29">
-        <TransformGroup name="Bone8" translation="1.84231e-08 4.61636e-07 -3.91204e-34" rotation="0 -0 1.37935e-33" nodeId="30"/>
-      </TransformGroup>
-      <TransformGroup name="componentJoint9" translation="6.70106e-07 -6.41726e-07 -2.06" rotation="-180 1.86693e-05 180" nodeId="31">
-        <TransformGroup name="Bone9" translation="1.84231e-08 4.61636e-07 0" nodeId="32"/>
-      </TransformGroup>
-      <TransformGroup name="componentJoint10" translation="7.51566e-07 -6.63582e-07 -2.31" rotation="-180 1.86693e-05 180" nodeId="33">
-        <TransformGroup name="Bone10" translation="1.84231e-08 4.61636e-07 2.01948e-28" rotation="0 -0 1.37935e-33" nodeId="34"/>
-      </TransformGroup>
-      <TransformGroup name="componentJoint11" translation="8.33027e-07 -6.85438e-07 -2.56" rotation="-180 1.86693e-05 180" nodeId="35">
-        <TransformGroup name="Bone11" translation="1.84231e-08 4.61636e-07 0" nodeId="36"/>
-      </TransformGroup>
-      <TransformGroup name="componentJoint12" translation="9.14487e-07 -7.07293e-07 -2.81" rotation="-180 1.86693e-05 180" nodeId="37">
-        <TransformGroup name="Bone12" translation="1.84231e-08 4.61636e-07 2.01948e-28" rotation="0 -0 1.37935e-33" nodeId="38"/>
-      </TransformGroup>
-      <TransformGroup name="componentJoint13" translation="9.95947e-07 -7.29149e-07 -3.06" rotation="-180 1.86693e-05 180" nodeId="39">
-        <TransformGroup name="Bone13" translation="1.84231e-08 4.61636e-07 0" nodeId="40"/>
-      </TransformGroup>
-      <TransformGroup name="componentJoint14" translation="1.07741e-06 -7.51005e-07 -3.31" rotation="-180 1.86693e-05 180" nodeId="41">
-        <TransformGroup name="Bone14" translation="1.84231e-08 4.61636e-07 2.01948e-28" rotation="0 -0 1.37935e-33" nodeId="42"/>
-      </TransformGroup>
-      <TransformGroup name="componentJoint15" translation="1.15887e-06 -7.72861e-07 -3.56" rotation="-180 1.86693e-05 180" nodeId="43">
-        <TransformGroup name="Bone15" translation="1.84231e-08 4.61636e-07 0" nodeId="44"/>
-      </TransformGroup>
-      <TransformGroup name="endConnectors" translation="1.34134e-06 -8.21817e-07 -4.12" nodeId="45">
-        <Shape name="female02" translation="-1.84231e-08 4.61636e-07 4.94693e-21" shapeId="4" clipDistance="150" nodeId="46" castsShadows="true" receiveShadows="true" materialIds="6"/>
-        <Shape name="male02" translation="-1.84231e-08 4.61636e-07 4.94693e-21" rotation="-180 1.86693e-05 180" shapeId="3" clipDistance="150" nodeId="47" castsShadows="true" receiveShadows="true" materialIds="6"/>
-        <TransformGroup name="componentJoint16" translation="-1.0101e-07 2.71011e-08 0.31" rotation="180 1.86693e-05 -180" nodeId="48">
-          <TransformGroup name="Bone16" translation="1.84231e-08 4.61636e-07 -8.1852e-34" rotation="0 -0 1.37935e-33" nodeId="49"/>
+      <TransformGroup name="endConnectors" translation="-1.34384e-06 0 -4.12422" rotation="-1.47565e-06 180 6.65891e-08" nodeId="181">
+        <Shape name="female02" translation="0 0 4.37879e-13" shapeId="5" clipDistance="150" nodeId="182" castsShadows="false" receiveShadows="false" materialIds="162"/>
+        <Shape name="male02" translation="0 0 4.37879e-13" shapeId="6" clipDistance="150" nodeId="183" castsShadows="false" receiveShadows="false" materialIds="162"/>
+        <TransformGroup name="detectionNode04" translation="0 0 4.37879e-13" nodeId="184">
+          <TransformGroup name="detectionNode05" translation="-1.5 0 2.5" nodeId="185"/>
+          <TransformGroup name="detectionNode06" translation="1.5 0 2.5" nodeId="186"/>
         </TransformGroup>
-        <TransformGroup name="componentJoint17" translation="0 0 4.03575e-14" rotation="-180 1.86693e-05 180" nodeId="50">
-          <TransformGroup name="Bone17" translation="1.84231e-08 4.61636e-07 -0.0599999" nodeId="51"/>
-        </TransformGroup>
-        <TransformGroup name="bezierEnd" translation="-1.0101e-07 2.71011e-08 0" rotation="0 180 0" nodeId="52"/>
-        <TransformGroup name="detectionNode01" translation="-3.79699e-08 4.66881e-07 0.0599999" rotation="180 1.86693e-05 -180" nodeId="53">
-          <TransformGroup name="detectionNode02" translation="-1.5 0 2.5" nodeId="54"/>
-          <TransformGroup name="detectionNode03" translation="1.5 0 2.5" nodeId="55"/>
-        </TransformGroup>
-        <TransformGroup name="endFloorLevel" translation="0 -0.117063 4.03574e-14" nodeId="56"/>
+        <TransformGroup name="Bone16" translation="7.95183e-09 1.63935e-08 -0.18752" rotation="180 1.86693e-05 180" nodeId="187"/>
+        <TransformGroup name="endFloorLevel" translation="0 -0.11204 4.37879e-13" nodeId="188"/>
       </TransformGroup>
-      <TransformGroup name="detectionNode04" translation="1.30337e-06 -3.54936e-07 0" rotation="0 180 5.74773e-12" nodeId="57">
-        <TransformGroup name="detectionNode05" translation="1.5 1.7053e-13 -2.5" rotation="180 1.86693e-05 -180" nodeId="58"/>
-        <TransformGroup name="detectionNode06" translation="-1.5 -1.7053e-13 -2.5" rotation="180 1.86693e-05 -180" nodeId="59"/>
+      <TransformGroup name="Bone2" translation="-1.10508e-07 0 -0.4367" nodeId="189"/>
+      <TransformGroup name="Bone3" translation="-2.07862e-07 0 -0.6867" nodeId="190">
+        <Shape name="component2" translation="4.01199e-09 -4.62907e-07 0" shapeId="4" nodeId="191" castsShadows="false" receiveShadows="false" nonRenderable="true" materialIds="161"/>
+      </TransformGroup>
+      <TransformGroup name="Bone4" translation="-3.05216e-07 0 -0.9367" nodeId="192"/>
+      <TransformGroup name="Bone5" translation="-4.02569e-07 0 -1.1867" nodeId="193">
+        <Shape name="component3" translation="3.5798e-08 -4.62907e-07 0" shapeId="4" nodeId="194" castsShadows="false" receiveShadows="false" nonRenderable="true" materialIds="161"/>
+      </TransformGroup>
+      <TransformGroup name="Bone6" translation="-4.3635e-07 0 -1.4367" nodeId="195"/>
+      <TransformGroup name="Bone7" translation="-5.33703e-07 0 -1.6867" nodeId="196">
+        <Shape name="component4" translation="4.01201e-09 -4.62907e-07 0" shapeId="4" nodeId="197" castsShadows="false" receiveShadows="false" nonRenderable="true" materialIds="161"/>
+      </TransformGroup>
+      <TransformGroup name="Bone8" translation="-6.31057e-07 0 -1.9367" nodeId="198"/>
+      <TransformGroup name="Bone9" translation="-7.28411e-07 0 -2.1867" nodeId="199">
+        <Shape name="component5" translation="3.5799e-08 -4.62907e-07 0" shapeId="4" nodeId="200" castsShadows="false" receiveShadows="false" nonRenderable="true" materialIds="161"/>
+      </TransformGroup>
+      <TransformGroup name="Bone10" translation="-8.25764e-07 0 -2.4367" nodeId="201"/>
+      <TransformGroup name="Bone11" translation="-8.59545e-07 0 -2.6867" nodeId="202">
+        <Shape name="component6" translation="4.01201e-09 -4.62907e-07 0" shapeId="4" nodeId="203" castsShadows="false" receiveShadows="false" nonRenderable="true" materialIds="161"/>
+      </TransformGroup>
+      <TransformGroup name="Bone12" translation="-9.56898e-07 0 -2.9367" nodeId="204"/>
+      <TransformGroup name="Bone13" translation="-1.05425e-06 0 -3.1867" nodeId="205">
+        <Shape name="component7" translation="3.58e-08 -4.62907e-07 0" shapeId="4" nodeId="206" castsShadows="false" receiveShadows="false" nonRenderable="true" materialIds="161"/>
+      </TransformGroup>
+      <TransformGroup name="Bone14" translation="-1.15161e-06 0 -3.4367" nodeId="207"/>
+      <TransformGroup name="Bone15" translation="-1.19333e-06 0 -3.6867" nodeId="208">
+        <Shape name="component8" translation="1.196e-08 -4.62907e-07 0" shapeId="4" nodeId="209" castsShadows="false" receiveShadows="false" nonRenderable="true" materialIds="161"/>
       </TransformGroup>
     </TransformGroup>
   </Scene>

@@ -5,6 +5,22 @@
 -- SPSEvents.lua
 -- FS25_SlurryPipeSystem
 
+
+-- Safe client send helper. During savegame shutdown/leave-game, g_client or
+-- its server connection can already be nil while late SPS cleanup code still
+-- asks an event to send. In that state there is nobody left to send to, so
+-- silently skip instead of crashing on g_client:getServerConnection().
+local function spsSendEventToServer(event)
+    if g_client ~= nil and g_client.getServerConnection ~= nil then
+        local connection = g_client:getServerConnection()
+        if connection ~= nil then
+            connection:sendEvent(event)
+            return true
+        end
+    end
+    return false
+end
+
 -- ---------------------------------------------------------------------------
 -- SlurryFlowStateEvent
 -- ---------------------------------------------------------------------------
@@ -56,7 +72,7 @@ function SlurryFlowStateEvent.sendEvent(vehicle, isFlowOpen, noEventSend)
             g_server:broadcastEvent(SlurryFlowStateEvent.new(vehicle, isFlowOpen), nil, nil, vehicle)
             return
         end
-        g_client:getServerConnection():sendEvent(SlurryFlowStateEvent.new(vehicle, isFlowOpen))
+        spsSendEventToServer(SlurryFlowStateEvent.new(vehicle, isFlowOpen))
     end
 end
 
@@ -111,7 +127,7 @@ function SlurryFlowDirectionEvent.sendEvent(vehicle, direction, noEventSend)
             g_server:broadcastEvent(SlurryFlowDirectionEvent.new(vehicle, direction), nil, nil, vehicle)
             return
         end
-        g_client:getServerConnection():sendEvent(SlurryFlowDirectionEvent.new(vehicle, direction))
+        spsSendEventToServer(SlurryFlowDirectionEvent.new(vehicle, direction))
     end
 end
 
@@ -174,7 +190,7 @@ function SlurryPipeConnectEvent.sendEvent(vehicleA, targetObject, targetType, co
             g_server:broadcastEvent(SlurryPipeConnectEvent.new(vehicleA, targetObject, targetType, couplingIdA, couplingIdB), nil, nil, vehicleA)
             return
         end
-        g_client:getServerConnection():sendEvent(SlurryPipeConnectEvent.new(vehicleA, targetObject, targetType, couplingIdA, couplingIdB))
+        spsSendEventToServer(SlurryPipeConnectEvent.new(vehicleA, targetObject, targetType, couplingIdA, couplingIdB))
     end
 end
 
@@ -218,12 +234,19 @@ function SlurryPipeDisconnectEvent:run(connection)
 end
 
 function SlurryPipeDisconnectEvent.sendEvent(vehicleA, couplingIdA, noEventSend)
-    if noEventSend == nil or noEventSend == false then
-        if g_server ~= nil then
-            g_server:broadcastEvent(SlurryPipeDisconnectEvent.new(vehicleA, couplingIdA), nil, nil, vehicleA)
-            return
+    if noEventSend == true then return end
+
+    if g_server ~= nil then
+        g_server:broadcastEvent(SlurryPipeDisconnectEvent.new(vehicleA, couplingIdA), nil, nil, vehicleA)
+        return
+    end
+
+    -- During quit/delete the client connection can already be nil.
+    if g_client ~= nil and g_client.getServerConnection ~= nil then
+        local connection = g_client:getServerConnection()
+        if connection ~= nil then
+            connection:sendEvent(SlurryPipeDisconnectEvent.new(vehicleA, couplingIdA))
         end
-        g_client:getServerConnection():sendEvent(SlurryPipeDisconnectEvent.new(vehicleA, couplingIdA))
     end
 end
 
@@ -312,7 +335,7 @@ function SlurryValveStateEvent.sendEvent(vehicleA, couplingArg, isOpen, noEventS
             g_server:broadcastEvent(SlurryValveStateEvent.new(vehicleA, couplingArg, isOpen), nil, nil, vehicleA)
             return
         end
-        g_client:getServerConnection():sendEvent(SlurryValveStateEvent.new(vehicleA, couplingArg, isOpen))
+        spsSendEventToServer(SlurryValveStateEvent.new(vehicleA, couplingArg, isOpen))
     end
 end
 -- ---------------------------------------------------------------------------
@@ -364,7 +387,7 @@ function SPSCouplingDeployEvent.sendEvent(placeable, couplingId, isDeployed, noE
             g_server:broadcastEvent(SPSCouplingDeployEvent.new(placeable, couplingId, isDeployed), nil, nil, placeable)
             return
         end
-        g_client:getServerConnection():sendEvent(SPSCouplingDeployEvent.new(placeable, couplingId, isDeployed))
+        spsSendEventToServer(SPSCouplingDeployEvent.new(placeable, couplingId, isDeployed))
     end
 end
 
@@ -420,7 +443,7 @@ function SPSSelfPumpStateEvent.sendEvent(vehicle, pumpRunning, noEventSend)
             g_server:broadcastEvent(SPSSelfPumpStateEvent.new(vehicle, pumpRunning), nil, nil, vehicle)
             return
         end
-        g_client:getServerConnection():sendEvent(SPSSelfPumpStateEvent.new(vehicle, pumpRunning))
+        spsSendEventToServer(SPSSelfPumpStateEvent.new(vehicle, pumpRunning))
     end
 end
 -- ---------------------------------------------------------------------------
@@ -475,6 +498,6 @@ function SPSSpreaderValveEvent.sendEvent(vehicle, isOpen, noEventSend)
             g_server:broadcastEvent(SPSSpreaderValveEvent.new(vehicle, isOpen), nil, nil, vehicle)
             return
         end
-        g_client:getServerConnection():sendEvent(SPSSpreaderValveEvent.new(vehicle, isOpen))
+        spsSendEventToServer(SPSSpreaderValveEvent.new(vehicle, isOpen))
     end
 end

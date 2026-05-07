@@ -34,7 +34,7 @@ end
 function SPSChainActivatable:getIsActivatable()
     if g_localPlayer == nil then return false end
     local node = self:_getNode()
-    if node == nil or node == 0 then return false end
+    if node == nil or node == 0 or not entityExists(node) then return false end
     local px, py, pz = getWorldTranslation(g_localPlayer.rootNode)
     local cx, cy, cz = getWorldTranslation(node)
     local dist = MathUtil.vector3Length(px - cx, py - cy, pz - cz)
@@ -73,7 +73,7 @@ end
 
 function SPSChainActivatable:getDistance(posX, posY, posZ)
     local node = self:_getNode()
-    if node == nil or node == 0 then return math.huge end
+    if node == nil or node == 0 or not entityExists(node) then return math.huge end
     local cx, cy, cz = getWorldTranslation(node)
     return MathUtil.vector3Length(posX - cx, posY - cy, posZ - cz)
 end

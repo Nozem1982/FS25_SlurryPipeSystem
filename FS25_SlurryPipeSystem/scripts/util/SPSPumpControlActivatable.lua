@@ -29,7 +29,7 @@ end
 -- ---------------------------------------------------------------------------
 function SPSPumpControlActivatable:getIsActivatable()
     if g_localPlayer == nil then return false end
-    if self.node == nil or self.node == 0 then return false end
+    if self.node == nil or self.node == 0 or not entityExists(self.node) then return false end
     if g_slurryPipeManager == nil or not g_slurryPipeManager:isRegistered(self.vehicle) then return false end
     local px, py, pz = getWorldTranslation(g_localPlayer.rootNode)
     local cx, cy, cz = getWorldTranslation(self.node)
@@ -37,7 +37,7 @@ function SPSPumpControlActivatable:getIsActivatable()
 end
 
 function SPSPumpControlActivatable:getDistance(posX, posY, posZ)
-    if self.node == nil or self.node == 0 then return math.huge end
+    if self.node == nil or self.node == 0 or not entityExists(self.node) then return math.huge end
     local cx, cy, cz = getWorldTranslation(self.node)
     return MathUtil.vector3Length(posX - cx, posY - cy, posZ - cz)
 end

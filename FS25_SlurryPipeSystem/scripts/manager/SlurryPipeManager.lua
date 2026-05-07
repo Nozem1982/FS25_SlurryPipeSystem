@@ -448,6 +448,15 @@ function SlurryPipeManager:registerVehicle(vehicle)
         return nil
     end
 
+    -- configIndexMatches handles both single values ("2") and comma-separated
+    -- lists ("0,1,2") — needed for vehicles like RossMore with multiple designs.
+    local function configIndexMatches(cfgIndexStr, activeIndex)
+        for part in cfgIndexStr:gmatch("[^,]+") do
+            if tonumber(part) == activeIndex then return true end
+        end
+        return false
+    end
+
     local armIndex = 0
     while true do
         local armKey = string.format(kp .. "slurryPipeSystem.fillArms.fillArm(%d)", armIndex)
@@ -458,12 +467,9 @@ function SlurryPipeManager:registerVehicle(vehicle)
 
         local cfgIndexStr = xmlFile:getString(armKey .. "#cylinderedConfigIndex")
         if cfgIndexStr ~= nil then
-            local cfgIndex    = tonumber(cfgIndexStr)
             local cfgType     = xmlFile:getString(armKey .. "#configType", "cylindered")
             local activeIndex = getActiveConfigIndex(cfgType)
-            -- Only skip if the config type exists on this vehicle AND index doesn't match.
-            -- If activeIndex is nil the vehicle has no such config — register unconditionally.
-            if activeIndex ~= nil and cfgIndex ~= activeIndex then
+            if activeIndex ~= nil and not configIndexMatches(cfgIndexStr, activeIndex) then
                 armIndex = armIndex + 1
                 continue
             end
@@ -622,10 +628,9 @@ function SlurryPipeManager:registerVehicle(vehicle)
 
         local cCfgIndexStr = xmlFile:getString(cKey .. "#cylinderedConfigIndex")
         if cCfgIndexStr ~= nil then
-            local cfgIndex    = tonumber(cCfgIndexStr)
             local cfgType     = xmlFile:getString(cKey .. "#configType", "cylindered")
             local activeIndex = getActiveConfigIndex(cfgType)
-            if activeIndex ~= nil and cfgIndex ~= activeIndex then
+            if activeIndex ~= nil and not configIndexMatches(cCfgIndexStr, activeIndex) then
                 couplingIndex = couplingIndex + 1
                 continue
             end
@@ -1449,6 +1454,21 @@ function SlurryPipeManager:unregisterPlaceable(placeable)
             end
             if entry.storeCouplings ~= nil then
                 for _, sc in ipairs(entry.storeCouplings) do
+                    -- Disconnect any pipes connected to this coupling
+                    if sc.isConnected then
+                        -- Close valve first to allow disconnect
+                        sc.valveOpen = false
+                        if sc.connectedPartnerCoupling ~= nil then
+                            sc.connectedPartnerCoupling.valveOpen = false
+                        end
+                        -- applyDisconnect handles nil vehicle for placeables
+                        self:applyDisconnect(nil, sc.id, sc)
+                    end
+                    -- Remove any pipe chains anchored at this coupling
+                    if sc.pipeChain ~= nil and SPSPipeChain ~= nil then
+                        SPSPipeChain.delete(sc.pipeChain)
+                        sc.pipeChain = nil
+                    end
                     if sc.pipeEffects ~= nil then
                         g_effectManager:stopEffects(sc.pipeEffects)
                         g_effectManager:deleteEffects(sc.pipeEffects)
@@ -1546,6 +1566,7 @@ function SlurryPipeManager:saveCouplingConnections(savePath)
             xmlFile:setFloat(base .. "#anchorY",           data.anchorY)
             xmlFile:setFloat(base .. "#anchorZ",           data.anchorZ)
             xmlFile:setBool(base  .. "#hasDockingStation", data.hasDockingStation)
+            xmlFile:setBool(base  .. "#localStart", data.localStart == true)
             if data.chainStartX ~= nil then
                 xmlFile:setFloat(base .. "#chainStartX",  data.chainStartX)
                 xmlFile:setFloat(base .. "#chainStartY",  data.chainStartY)
@@ -1615,6 +1636,49 @@ function SlurryPipeManager:saveCouplingConnections(savePath)
         end
     end
 
+    -- Save connector/valve animation state for every coupling that has one.
+    -- Coupling id alone is not unique, so we also save owner type and mount-node position.
+    local animIdx = 0
+    local function writeAnimState(aBase, slotIndex, slotName, inst)
+        if SPSCouplerAnimator == nil or SPSCouplerAnimator.getSaveState == nil then return slotIndex end
+        local state = SPSCouplerAnimator.getSaveState(inst)
+        if state == nil then return slotIndex end
+
+        local oBase = string.format(aBase .. ".animatedObject(%d)", slotIndex)
+        xmlFile:setString(oBase .. "#id",        slotName)
+        xmlFile:setInt(oBase    .. "#animId",    state.animId or 0)
+        xmlFile:setFloat(oBase  .. "#time",      state.time or 0)
+        xmlFile:setInt(oBase    .. "#direction", state.direction or 0)
+        xmlFile:setBool(oBase   .. "#playing",   state.playing == true)
+        return slotIndex + 1
+    end
+
+    local function saveCouplingAnim(c, ownerType)
+        if c == nil or c.mountNode == nil or c.mountNode == 0 or not entityExists(c.mountNode) then return end
+        if c.connectorAnim == nil and c.valveAnim == nil then return end
+
+        local wx, wy, wz = getWorldTranslation(c.mountNode)
+        local aBase = string.format("slurryPipeSystem.couplerAnimations.entry(%d)", animIdx)
+        xmlFile:setString(aBase .. "#ownerType", ownerType)
+        xmlFile:setFloat(aBase  .. "#x",         wx)
+        xmlFile:setFloat(aBase  .. "#y",         wy)
+        xmlFile:setFloat(aBase  .. "#z",         wz)
+        xmlFile:setInt(aBase    .. "#id",        c.id or -9999)
+
+        local slotIndex = 0
+        slotIndex = writeAnimState(aBase, slotIndex, "connector", c.connectorAnim)
+        slotIndex = writeAnimState(aBase, slotIndex, "valve",     c.valveAnim)
+        if slotIndex > 0 then animIdx = animIdx + 1 end
+    end
+
+    for _, vEntry in ipairs(self.registeredVehicles) do
+        for _, c in ipairs(vEntry.couplingEntries) do saveCouplingAnim(c, "vehicle") end
+    end
+    for _, pEntry in ipairs(self.registeredPlaceables) do
+        for _, c in ipairs(pEntry.storeCouplings) do saveCouplingAnim(c, "placeable") end
+    end
+    for _, c in ipairs(self.chainTerminusEntries) do saveCouplingAnim(c, "chain") end
+
     xmlFile:save()
     xmlFile:delete()
     print("[SPS] saveCouplingConnections: saved " .. written .. " connections, "
@@ -1671,6 +1735,7 @@ function SlurryPipeManager:loadCouplingConnections(savePath)
             anchorY           = xmlFile:getFloat(base .. "#anchorY", 0),
             anchorZ           = xmlFile:getFloat(base .. "#anchorZ", 0),
             hasDockingStation = xmlFile:getBool(base .. "#hasDockingStation", false),
+            localStart        = xmlFile:getBool(base .. "#localStart", false),
             dsSaveX           = xmlFile:getFloat(base .. "#dsSaveX",  0),
             dsSaveY           = xmlFile:getFloat(base .. "#dsSaveY",  0),
             dsSaveZ           = xmlFile:getFloat(base .. "#dsSaveZ",  0),
@@ -1747,18 +1812,99 @@ function SlurryPipeManager:loadCouplingConnections(savePath)
         thickIdx = thickIdx + 1
     end
 
+    -- Load saved coupler animation states.  New format stores owner/position and
+    -- per-animation time/direction.  Old #connected saves are still accepted.
+    self._pendingCouplerAnims = {}
+    local animLoadIdx = 0
+    while true do
+        local aBase = string.format("slurryPipeSystem.couplerAnimations.entry(%d)", animLoadIdx)
+        if not xmlFile:hasProperty(aBase) then break end
+
+        local entry = {
+            ownerType = xmlFile:getString(aBase .. "#ownerType", nil),
+            x         = xmlFile:getFloat(aBase .. "#x", 0),
+            y         = xmlFile:getFloat(aBase .. "#y", 0),
+            z         = xmlFile:getFloat(aBase .. "#z", 0),
+            id        = xmlFile:getInt(aBase .. "#id", -9999),
+            objects   = {},
+            applied   = false,
+        }
+
+        local objIdx = 0
+        while true do
+            local oBase = string.format(aBase .. ".animatedObject(%d)", objIdx)
+            if not xmlFile:hasProperty(oBase) then break end
+            local slotName = xmlFile:getString(oBase .. "#id", "")
+            entry.objects[slotName] = {
+                animId    = xmlFile:getInt(oBase .. "#animId", 0),
+                time      = xmlFile:getFloat(oBase .. "#time", 0),
+                direction = xmlFile:getInt(oBase .. "#direction", 0),
+                playing   = xmlFile:getBool(oBase .. "#playing", false),
+            }
+            objIdx = objIdx + 1
+        end
+
+        if objIdx == 0 and xmlFile:hasProperty(aBase .. "#connected") then
+            entry.legacyConnected = xmlFile:getBool(aBase .. "#connected", false)
+        end
+
+        table.insert(self._pendingCouplerAnims, entry)
+        animLoadIdx = animLoadIdx + 1
+    end
+
     xmlFile:delete()
     print("[SPS] loadCouplingConnections: loaded " .. #self.pendingConnections
         .. " connections, " .. #self.pendingChains .. " chains, "
         .. #self.pendingDeployedCouplings .. " deployed couplings, "
-        .. #self._pendingThickness .. " thickness entries")
+        .. #self._pendingThickness .. " thickness entries"
+        .. ", " .. animLoadIdx .. " coupler anim entries")
+end
+
+-- Applies saved coupler animation time/direction to a registered coupling.
+-- This is deliberately position-based because pipeCoupling id values repeat between
+-- vehicles, placeables and chain ends.
+function SlurryPipeManager:_applyPendingCouplerAnimation(coupling)
+    if coupling == nil or coupling.mountNode == nil or coupling.mountNode == 0 then return false end
+    if self._pendingCouplerAnims == nil or SPSCouplerAnimator == nil then return false end
+    if not entityExists(coupling.mountNode) then return false end
+
+    local cx, cy, cz = getWorldTranslation(coupling.mountNode)
+    local TOLERANCE_SQ = 0.1 * 0.1
+
+    for _, entry in ipairs(self._pendingCouplerAnims) do
+        if not entry.applied and entry.id == coupling.id then
+            local dx, dy, dz = cx - (entry.x or 0), cy - (entry.y or 0), cz - (entry.z or 0)
+            if dx*dx + dy*dy + dz*dz <= TOLERANCE_SQ then
+                local function restore(slotName, inst)
+                    if inst == nil then return end
+                    local obj = entry.objects ~= nil and entry.objects[slotName] or nil
+                    if obj ~= nil and SPSCouplerAnimator.restoreState ~= nil then
+                        SPSCouplerAnimator.restoreState(inst, obj.time or 0, obj.direction or 0, obj.playing == true)
+                    elseif slotName == "connector" and entry.legacyConnected ~= nil then
+                        if entry.legacyConnected and SPSCouplerAnimator.setEnd ~= nil then
+                            SPSCouplerAnimator.setEnd(inst)
+                        elseif SPSCouplerAnimator.setStart ~= nil then
+                            SPSCouplerAnimator.setStart(inst)
+                        end
+                    end
+                end
+
+                restore("connector", coupling.connectorAnim)
+                restore("valve", coupling.valveAnim)
+                entry.applied = true
+                return true
+            end
+        end
+    end
+    return false
 end
 
 -- Called at the end of registerVehicle and registerPlaceable.
 -- For each pending connection, checks if both mount nodes now exist.
 -- Position match tolerance: 0.1m (positions stored as floats, no drift expected).
 function SlurryPipeManager:tryResolvePendingConnections()
-    if #self.pendingConnections == 0 and #self.pendingChains == 0 and #self.pendingDeployedCouplings == 0 then return end
+    if #self.pendingConnections == 0 and #self.pendingChains == 0 and #self.pendingDeployedCouplings == 0
+    and next(self._pendingCouplerAnims) == nil then return end
 
     local TOLERANCE_SQ = 0.1 * 0.1
 
@@ -1831,6 +1977,10 @@ function SlurryPipeManager:tryResolvePendingConnections()
             self.currentPipeColor = { r = pending.colorR or savedColor.r, g = pending.colorG or savedColor.g, b = pending.colorB or savedColor.b }
             self:applyConnectCouplings(cA, cB, ownerA, ownerB)
             self.currentPipeColor = savedColor
+            -- Immediately snap connector/valve animations to saved state.
+            -- Must run AFTER applyConnectCouplings (which calls play()) so we override it.
+            self:_applyPendingCouplerAnimation(cA)
+            self:_applyPendingCouplerAnimation(cB)
             if pending.valveOpen then
                 self:applyValveState(ownerAv, cA.id, true, cA)
             end
@@ -1869,6 +2019,18 @@ function SlurryPipeManager:tryResolvePendingConnections()
                 if p == r then table.remove(self.pendingDeployedCouplings, i) break end
             end
         end
+    end
+
+    -- Final pass: restore saved animation positions on any registered coupler
+    -- that did not go through applyConnectCouplings this tick.
+    if self._pendingCouplerAnims ~= nil then
+        for _, vEntry in ipairs(self.registeredVehicles) do
+            for _, c in ipairs(vEntry.couplingEntries) do self:_applyPendingCouplerAnimation(c) end
+        end
+        for _, pEntry in ipairs(self.registeredPlaceables) do
+            for _, c in ipairs(pEntry.storeCouplings) do self:_applyPendingCouplerAnimation(c) end
+        end
+        for _, c in ipairs(self.chainTerminusEntries) do self:_applyPendingCouplerAnimation(c) end
     end
 end
 
@@ -1961,7 +2123,7 @@ function SlurryPipeManager:onChainStartLaying(coupling, anchorActivatable)
         local sy = getTerrainHeightAtWorldPos(g_currentMission.terrainRootNode, sx, 0, sz) + 0.05
         chain:startLaying(sx, sy, sz, mry)
     else
-        chain:startLaying(mx, my, mz, mry)
+        chain:startLaying(mx, my, mz, mry, coupling.mountNode)
     end
 
     -- Play connector animation forward on the anchor coupling (no-op if not bound).
@@ -2354,26 +2516,32 @@ function SlurryPipeManager:_getCouplingArcNodes(coupling)
     -- Chain terminus: detNode01 IS the apex, its children are arc02/arc03
     if coupling.isChainTerminus then
         local apexNode = coupling.mountNode
-        if apexNode == nil or apexNode == 0 then return nil, nil, nil end
+        if apexNode == nil or apexNode == 0 or not entityExists(apexNode) then return nil, nil, nil end
         if getNumOfChildren(apexNode) < 2 then return nil, nil, nil end
         local arc1 = getChildAt(apexNode, 0)
         local arc2 = getChildAt(apexNode, 1)
         if arc1 == nil or arc1 == 0 or arc2 == nil or arc2 == 0 then return nil, nil, nil end
+        if not entityExists(arc1) or not entityExists(arc2) then return nil, nil, nil end
         return apexNode, arc1, arc2
     end
     local baseNode = coupling.arcNode or coupling.mountNode
-    if baseNode == nil or baseNode == 0 then return nil, nil, nil end
+    if baseNode == nil or baseNode == 0 or not entityExists(baseNode) then return nil, nil, nil end
     if getNumOfChildren(baseNode) == 0 then return nil, nil, nil end
     local arcsNode = getChildAt(baseNode, 0)
-    if arcsNode == nil or arcsNode == 0 then return nil, nil, nil end
+    if arcsNode == nil or arcsNode == 0 or not entityExists(arcsNode) then return nil, nil, nil end
     if getNumOfChildren(arcsNode) < 2 then return nil, nil, nil end
     local arc1 = getChildAt(arcsNode, 0)
     local arc2 = getChildAt(arcsNode, 1)
     if arc1 == nil or arc1 == 0 or arc2 == nil or arc2 == 0 then return nil, nil, nil end
+    if not entityExists(arc1) or not entityExists(arc2) then return nil, nil, nil end
     return arcsNode, arc1, arc2
 end
 
 function SlurryPipeManager:_arcsOverlap(apexA, arc1A, arc2A, apexB, arc1B, arc2B)
+    -- Validate all nodes exist before accessing them
+    if not entityExists(apexA) or not entityExists(arc1A) or not entityExists(arc2A) then return false end
+    if not entityExists(apexB) or not entityExists(arc1B) or not entityExists(arc2B) then return false end
+    
     local function pointInTri(px, pz, ax, az, bx, bz, cx, cz)
         local d1 = (px-bx)*(az-bz) - (ax-bx)*(pz-bz)
         local d2 = (px-cx)*(bz-cz) - (bx-cx)*(pz-cz)
@@ -2422,7 +2590,7 @@ function SlurryPipeManager:findOverlappingCoupler(coupling)
     -- Already connected — no new connection possible
     if coupling.isConnected then return nil end
     local apexA, arc1A, arc2A = self:_getCouplingArcNodes(coupling)
-    if apexA == nil then return nil end
+    if apexA == nil or not entityExists(apexA) then return nil end
 
     local apexAx, apexAy, apexAz = getWorldTranslation(apexA)
 
@@ -2430,7 +2598,7 @@ function SlurryPipeManager:findOverlappingCoupler(coupling)
         for _, vc in ipairs(vEntry.couplingEntries) do
             if vc ~= coupling and not vc.isConnected then
                 local apexB, arc1B, arc2B = self:_getCouplingArcNodes(vc)
-                if apexB ~= nil then
+                if apexB ~= nil and entityExists(apexB) then
                     local bx, by, bz = getWorldTranslation(apexB)
                     if MathUtil.vector3Length(apexAx-bx, apexAy-by, apexAz-bz) <= SPS_MAX_CONNECT_DIST then
                         if self:_arcsOverlap(apexA, arc1A, arc2A, apexB, arc1B, arc2B) then
@@ -2450,7 +2618,7 @@ function SlurryPipeManager:findOverlappingCoupler(coupling)
                 and not sc.isConnected
                 and (not sc.deployable or sc.isDeployed) then
                     local apexB, arc1B, arc2B = self:_getCouplingArcNodes(sc)
-                    if apexB ~= nil then
+                    if apexB ~= nil and entityExists(apexB) then
                         local bx, by, bz = getWorldTranslation(apexB)
                         if MathUtil.vector3Length(apexAx-bx, apexAy-by, apexAz-bz) <= SPS_MAX_CONNECT_DIST then
                             if self:_arcsOverlap(apexA, arc1A, arc2A, apexB, arc1B, arc2B) then
@@ -2487,11 +2655,11 @@ function SlurryPipeManager:findOverlappingCoupler(coupling)
             end
             if not isOwnChain then
                 local apexB, arc1B, arc2B = self:_getCouplingArcNodes(ct)
-                if apexB ~= nil then
+                if apexB ~= nil and entityExists(apexB) then
                     if self:_arcsOverlap(apexA, arc1A, arc2A, apexB, arc1B, arc2B) then
                         local bx, _, bz = getWorldTranslation(apexB)
                         local d = MathUtil.vector3Length(apexAx - bx, 0, apexAz - bz)
-                        if (coupling.maxPipeLength == nil or d <= coupling.maxPipeLength) and d < bestDist then
+                        if d < bestDist then
                             bestDist = d
                             bestCt   = ct
                         end
@@ -2617,10 +2785,22 @@ function SlurryPipeManager:applyConnectCouplings(couplingA, couplingB, ownerA, o
         elseif couplingB.isChainTerminus and couplingB.chain ~= nil and not couplingB.isChainStart then
             local segs = couplingB.chain.segments
             if #segs > 0 then nodeB = segs[#segs].endConnectors end
+        elseif couplingB.isChainStart and couplingB.chain ~= nil then
+            local segs = couplingB.chain.segments
+            if #segs > 0 then nodeB = segs[1].pipeRoot end
+        elseif couplingA.isChainStart and couplingA.chain ~= nil then
+            local segs = couplingA.chain.segments
+            if #segs > 0 then nodeA = segs[1].pipeRoot end
         end
         local startConnType = (couplingA.connectorType ~= nil) and couplingA.connectorType or "male"
         local endConnType   = (couplingB.connectorType ~= nil) and couplingB.connectorType or "female"
-        local inst = g_spsPipeVisual:createPipe(nodeA, nodeB, startConnType, endConnType)
+        local startFlip     = (couplingA.isChainTerminus == true) or (couplingA.placeable ~= nil)
+        local endFlip       = (couplingB.isChainTerminus == true) or (couplingB.placeable ~= nil)
+        print(string.format("[SPS] applyConnectCouplings: startFlip=%s endFlip=%s A.isChainTerminus=%s B.isChainTerminus=%s A.isChainStart=%s B.isChainStart=%s",
+            tostring(startFlip), tostring(endFlip),
+            tostring(couplingA.isChainTerminus), tostring(couplingB.isChainTerminus),
+            tostring(couplingA.isChainStart),    tostring(couplingB.isChainStart)))
+        local inst = g_spsPipeVisual:createPipe(nodeA, nodeB, startConnType, endConnType, endFlip, startFlip)
         if inst ~= nil then
             local pipeId = self._nextPipeId
             self._nextPipeId = self._nextPipeId + 1
@@ -2632,21 +2812,21 @@ function SlurryPipeManager:applyConnectCouplings(couplingA, couplingB, ownerA, o
             -- Chain start (detNode04) = female receiver -> connectorEnd shows female02 (child 0)
             -- Chain far end (terminus) = female -> bez meets it with male -> connectorEnd shows male02 (child 1)
             -- Chain start as connectorStart: show female01 (chain start is female)
-            if couplingB.isChainStart and inst.connectorEnd ~= nil then
+            if couplingB.isChainStart and inst.endConnectors ~= nil then
                 inst.connectorEndFlipped = true
-                local femaleConn = getChildAt(inst.connectorEnd, 0)
-                local maleConn   = getChildAt(inst.connectorEnd, 1)
+                local femaleConn = getChildAt(inst.endConnectors, 0)
+                local maleConn   = getChildAt(inst.endConnectors, 1)
                 if femaleConn ~= nil and femaleConn ~= 0 then setVisibility(femaleConn, true) end
                 if maleConn   ~= nil and maleConn   ~= 0 then setVisibility(maleConn, false) end
-            elseif couplingB.isChainTerminus and not couplingB.isChainStart and inst.connectorEnd ~= nil then
+            elseif couplingB.isChainTerminus and not couplingB.isChainStart and inst.endConnectors ~= nil then
                 -- Chain far end is female — bez end connecting to it uses male02
-                local femaleConn = getChildAt(inst.connectorEnd, 0)
-                local maleConn   = getChildAt(inst.connectorEnd, 1)
+                local femaleConn = getChildAt(inst.endConnectors, 0)
+                local maleConn   = getChildAt(inst.endConnectors, 1)
                 if femaleConn ~= nil and femaleConn ~= 0 then setVisibility(femaleConn, false) end
                 if maleConn   ~= nil and maleConn   ~= 0 then setVisibility(maleConn, true) end
-            elseif couplingA.isChainStart and inst.connectorStart ~= nil then
-                local femaleConn = getChildAt(inst.connectorStart, 0)
-                local maleConn   = getChildAt(inst.connectorStart, 1)
+            elseif couplingA.isChainStart and inst.startConnectors ~= nil then
+                local femaleConn = getChildAt(inst.startConnectors, 0)
+                local maleConn   = getChildAt(inst.startConnectors, 1)
                 if femaleConn ~= nil and femaleConn ~= 0 then setVisibility(femaleConn, true) end
                 if maleConn   ~= nil and maleConn   ~= 0 then setVisibility(maleConn, false) end
             end
@@ -2732,7 +2912,7 @@ function SlurryPipeManager:applyDisconnect(vehicle, couplingId, couplingObj)
     end
 
     -- Stop any active flow
-    if coupling.connectedTarget ~= nil then
+    if coupling.connectedTarget ~= nil and vehicle ~= nil then
         self:stopFlow(vehicle)
     end
 
@@ -3073,7 +3253,7 @@ function SlurryPipeManager:update(dt)
         local timeScale = env ~= nil and env.timeAdjustment or 1
         local dtHours   = (dt * 0.001) * timeScale / 3600
         for _, vEntry in ipairs(self.registeredVehicles) do
-            if vEntry.agitatorTipNode ~= nil then
+            if vEntry.agitatorTipNode ~= nil and entityExists(vEntry.agitatorTipNode) then
                 local tipNode = vEntry.agitatorTipNode
                 local ptoOk   = SlurryPipeSystemOverride.isPTOConnected(vEntry.vehicle)
                 local motorOk = false
@@ -3225,15 +3405,26 @@ function SlurryPipeManager:update(dt)
                                     break
                                 end
                             end
+							print("[SPS PIPE EFFECT TEST] path=conduit resolvedCoupling=" .. tostring(resolvedCoupling ~= nil))
                             shouldPlay = conduitActive and cabOpen and pumpOn and isDestination
                         elseif sc.valveOpen then
-                            local isDischarge = vState ~= nil and vState.direction == SPS_DIRECTION_DISCHARGE
-                            local dirOk
-                            if sc.flowDirection == "DISCHARGE" then dirOk = isDischarge
-                            elseif sc.flowDirection == "FILL" then dirOk = not isDischarge
-                            else dirOk = true end
-                            shouldPlay = pumpOn and dirOk
-                        end
+							local isDischarge = vState ~= nil and vState.direction == SPS_DIRECTION_DISCHARGE
+							local dirOk
+							if sc.flowDirection == "DISCHARGE" then dirOk = isDischarge
+							elseif sc.flowDirection == "FILL" then dirOk = not isDischarge
+							else dirOk = true end
+						
+							local tankerHasSlurry = false
+						
+							if vehicle ~= nil and resolvedCoupling ~= nil and vehicle.getFillUnitFillLevel ~= nil then
+								local fillUnitIndex = resolvedCoupling.fillUnitIndex
+								if fillUnitIndex ~= nil then
+									tankerHasSlurry = vehicle:getFillUnitFillLevel(fillUnitIndex) > 0
+								end
+							end
+							print("[SPS PIPE EFFECT TEST] path=direct scValveOpen=" .. tostring(sc.valveOpen))
+							shouldPlay = pumpOn and dirOk and tankerHasSlurry
+						end
                     end
                 end
                 -- Chain anchor path: this store coupling is a chain anchor (sc.isConnected=false).
@@ -3295,7 +3486,16 @@ function SlurryPipeManager:update(dt)
                                         if sc.flowDirection == "DISCHARGE" then dirOk2 = isDischarge2
                                         elseif sc.flowDirection == "FILL" then dirOk2 = not isDischarge2
                                         else dirOk2 = true end
-                                        if pumpOn2 and valveOpen2 and dirOk2 then
+                                        
+                                        local tankerHasSlurry2 = false
+                                        if vehicle2 ~= nil and resolvedC ~= nil and vehicle2.getFillUnitFillLevel ~= nil then
+                                            local fillUnitIndex2 = resolvedC.fillUnitIndex
+                                            if fillUnitIndex2 ~= nil then
+                                                tankerHasSlurry2 = vehicle2:getFillUnitFillLevel(fillUnitIndex2) > 0
+                                            end
+                                        end
+                                        
+                                        if pumpOn2 and valveOpen2 and dirOk2 and tankerHasSlurry2 then
                                             shouldPlay = true
                                         end
                                     end
@@ -3398,13 +3598,15 @@ function SlurryPipeManager:update(dt)
                     if coupling.isConnected and coupling.mountNode ~= nil then
                         local partner = coupling.connectedPartnerCoupling
                         if partner ~= nil and partner.mountNode ~= nil then
-                            local ax, ay, az = getWorldTranslation(coupling.mountNode)
-                            local bx, by, bz = getWorldTranslation(partner.mountNode)
-                            local dist = MathUtil.vector3Length(ax - bx, ay - by, az - bz)
-                            if dist > SPS_AUTODISCONNECT_DIST then
-                                print("[SPS] auto-disconnect: dist=" .. string.format("%.1f", dist)
-                                    .. "m > max=" .. tostring(SPS_AUTODISCONNECT_DIST) .. "m")
-                                self:_forceDisconnect(entry.vehicle, coupling)
+                            if entityExists(coupling.mountNode) and entityExists(partner.mountNode) then
+                                local ax, ay, az = getWorldTranslation(coupling.mountNode)
+                                local bx, by, bz = getWorldTranslation(partner.mountNode)
+                                local dist = MathUtil.vector3Length(ax - bx, ay - by, az - bz)
+                                if dist > SPS_AUTODISCONNECT_DIST then
+                                    print("[SPS] auto-disconnect: dist=" .. string.format("%.1f", dist)
+                                        .. "m > max=" .. tostring(SPS_AUTODISCONNECT_DIST) .. "m")
+                                    self:_forceDisconnect(entry.vehicle, coupling)
+                                end
                             end
                         end
                     end
@@ -3447,19 +3649,21 @@ function SlurryPipeManager:detectArmConnection(vehicle, entry, arm)
 
     -- Rubber boot detection
     local supportsRubberBoot = (tipType == SPS_TIP_TYPE_RUBBER_BOOT) or (tipType == SPS_TIP_TYPE_RUBBER_BOOT_PIT)
-    if supportsRubberBoot and arm.tipNode ~= nil then
+    if supportsRubberBoot and arm.tipNode ~= nil and entityExists(arm.tipNode) then
         local tx, ty, tz   = getWorldTranslation(arm.tipNode)
         local XZ_TOLERANCE = 0.15
         for _, rbpEntry in ipairs(self.rubberBootPortEntries) do
             if rbpEntry.vehicle ~= vehicle and rbpEntry.lowerNode ~= nil and rbpEntry.upperNode ~= nil then
-                local lx, lowerY, lz = getWorldTranslation(rbpEntry.lowerNode)
-                local _,  upperY, _  = getWorldTranslation(rbpEntry.upperNode)
-                if lowerY > upperY then lowerY, upperY = upperY, lowerY end
-                local xzDist = math.sqrt((tx - lx) * (tx - lx) + (tz - lz) * (tz - lz))
-                if ty >= lowerY and ty <= upperY and xzDist <= XZ_TOLERANCE then
-                    newConnected  = true
-                    foundBootPort = rbpEntry
-                    break
+                if entityExists(rbpEntry.lowerNode) and entityExists(rbpEntry.upperNode) then
+                    local lx, lowerY, lz = getWorldTranslation(rbpEntry.lowerNode)
+                    local _,  upperY, _  = getWorldTranslation(rbpEntry.upperNode)
+                    if lowerY > upperY then lowerY, upperY = upperY, lowerY end
+                    local xzDist = math.sqrt((tx - lx) * (tx - lx) + (tz - lz) * (tz - lz))
+                    if ty >= lowerY and ty <= upperY and xzDist <= XZ_TOLERANCE then
+                        newConnected  = true
+                        foundBootPort = rbpEntry
+                        break
+                    end
                 end
             end
         end

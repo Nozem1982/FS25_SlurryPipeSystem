@@ -34,7 +34,7 @@ end
 -- ---------------------------------------------------------------------------
 function SPSPipeActivatable:getIsActivatable(dirX, dirY, dirZ)
     if g_localPlayer == nil then return false end
-    if self.coupling.mountNode == nil then return false end
+    if self.coupling.mountNode == nil or not entityExists(self.coupling.mountNode) then return false end
     local px, py, pz = getWorldTranslation(g_localPlayer.rootNode)
     local cx, cy, cz = getWorldTranslation(self.coupling.mountNode)
     local dist = MathUtil.vector3Length(px - cx, py - cy, pz - cz)
@@ -44,7 +44,7 @@ function SPSPipeActivatable:getIsActivatable(dirX, dirY, dirZ)
 end
 
 function SPSPipeActivatable:getDistance(posX, posY, posZ)
-    if self.coupling.mountNode == nil then return math.huge end
+    if self.coupling.mountNode == nil or not entityExists(self.coupling.mountNode) then return math.huge end
     local cx, cy, cz = getWorldTranslation(self.coupling.mountNode)
     return MathUtil.vector3Length(posX - cx, posY - cy, posZ - cz)
 end

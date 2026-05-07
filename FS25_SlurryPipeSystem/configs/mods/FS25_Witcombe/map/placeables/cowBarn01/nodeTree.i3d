@@ -25,9 +25,9 @@
     <File fileId="15" filename="$data/shared/detailLibrary/nonMetallic/rubber/rubber_normal.dds"/>
     <File fileId="14" filename="$data/shared/detailLibrary/nonMetallic/rubber/rubber_specular.dds"/>
     <File fileId="1" filename="$data/shared/white_diffuse.dds"/>
-    <File fileId="26" filename="../../../../../FS25_Witcombe/map/textures/textures/asphalt_Normal.dds"/>
-    <File fileId="27" filename="../../../../../FS25_Witcombe/map/textures/textures/asphalt_specular.dds"/>
-    <File fileId="25" filename="../../../../../FS25_Witcombe/map/textures/textures/farmFloorMain_diffuse.dds"/>
+    <File fileId="26" filename="textures/asphalt_Normal.dds"/>
+    <File fileId="27" filename="textures/asphalt_specular.dds"/>
+    <File fileId="25" filename="textures/farmFloorMain_diffuse.dds"/>
   </Files>
 
 
@@ -46,7 +46,7 @@
       <Normalmap fileId="29"/>
       <Glossmap fileId="30"/>
     </Material>
-    <Material name="liquidManureConcrete_mat" materialId="7" customShaderId="20">
+    <Material name="liquidManureConcrete_mat" materialId="40" customShaderId="20">
       <Texture fileId="25"/>
       <Normalmap fileId="26"/>
       <Glossmap fileId="27"/>
@@ -73,20 +73,20 @@
   <Scene>
     <TransformGroup name="SPS_cowBarn01" nodeId="17">
       <TransformGroup name="pipeCouplers" nodeId="18">
-        <TransformGroup name="storage" translation="-3.71617 -0.00494528 5.3455" nodeId="376">
+        <TransformGroup name="storage" translation="-3.71617 -0.00494528 5.3455" nodeId="19">
           <TransformGroup name="SPS_pipeCoupler01" translation="-26.2348 0.283932 -9.38812" rotation="-0 90 0" nodeId="20">
             <TransformGroup name="SPS_pipeCoupler01Arcs" translation="0 0 8.5607e-07" rotation="180 1.86693e-05 180" nodeId="21">
               <TransformGroup name="SPS_pipeCoupler01Arc01" translation="-1.5 0 2.5" nodeId="22"/>
               <TransformGroup name="SPS_pipeCoupler01Arc02" translation="1.5 0 2.5" nodeId="23"/>
             </TransformGroup>
-            <Shape name="hideHose01" translation="-0.00317074 -0.000340015 0.135509" rotation="-0 -90 0" shapeId="1" kinematic="true" compound="true" collisionFilterGroup="0x1034" collisionFilterMask="0xfffffbff" clipDistance="150" nodeId="28" castsShadows="false" receiveShadows="false" materialIds="9">
-              <Shape name="hideHose02" shapeId="2" kinematic="true" compound="true" collisionFilterGroup="0x1034" collisionFilterMask="0xfffffbff" clipDistance="150" nodeId="29" castsShadows="true" receiveShadows="true" materialIds="5"/>
+            <Shape name="hideHose01" translation="-0.00317074 -0.000340015 0.135509" rotation="-0 -90 0" shapeId="1" kinematic="true" compound="true" collisionFilterGroup="0x1034" collisionFilterMask="0xfffffbff" clipDistance="150" nodeId="24" castsShadows="false" receiveShadows="false" materialIds="9">
+              <Shape name="hideHose02" shapeId="2" kinematic="true" compound="true" collisionFilterGroup="0x1034" collisionFilterMask="0xfffffbff" clipDistance="150" nodeId="25" castsShadows="true" receiveShadows="true" materialIds="5"/>
             </Shape>
             <Shape name="liquidManureGrid01" translation="-0.34818 -0.372893 1.0876" rotation="-0 -90 0" shapeId="3" static="true" collisionFilterGroup="0x1034" collisionFilterMask="0xfffffbff" clipDistance="300" nodeId="26" castsShadows="true" receiveShadows="true" materialIds="8"/>
           </TransformGroup>
-          <Shape name="liquidManure01" translation="-25.1472 -0.0889607 -9.03994" shapeId="4" static="true" collisionFilterGroup="0x1034" collisionFilterMask="0xfffffbff" clipDistance="300" nodeId="24" castsShadows="true" receiveShadows="true" materialIds="7">
-            <Shape name="liquidManureFillPlane" shapeId="5" nodeId="25" castsShadows="true" receiveShadows="true" materialIds="6"/>
-            <Shape name="liquidManureGrid02" shapeId="6" static="true" collisionFilterGroup="0x1034" collisionFilterMask="0xfffffbff" clipDistance="300" nodeId="27" castsShadows="true" receiveShadows="true" materialIds="8"/>
+          <Shape name="liquidManure01" translation="-25.1472 -0.0889607 -9.03994" shapeId="4" static="true" collisionFilterGroup="0x1034" collisionFilterMask="0xfffffbff" clipDistance="300" nodeId="27" castsShadows="true" receiveShadows="true" materialIds="40">
+            <Shape name="liquidManureFillPlane" shapeId="5" nodeId="28" castsShadows="true" receiveShadows="true" materialIds="6"/>
+            <Shape name="liquidManureGrid02" shapeId="6" static="true" collisionFilterGroup="0x1034" collisionFilterMask="0xfffffbff" clipDistance="300" nodeId="29" castsShadows="true" receiveShadows="true" materialIds="8"/>
           </Shape>
         </TransformGroup>
       </TransformGroup>

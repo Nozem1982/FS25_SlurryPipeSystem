@@ -8,7 +8,7 @@
 <slurryPipeSystem>
     <nodeTree filename="nodeTree.i3d"/>
 
-    <flow litersPerSecond="1390"/>
+    <flow litersPerSecond="300"/>
 
     <fillArms>
 

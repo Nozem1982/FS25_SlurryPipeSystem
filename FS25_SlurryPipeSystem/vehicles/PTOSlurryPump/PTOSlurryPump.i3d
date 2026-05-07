@@ -7,8 +7,6 @@
 
   <Files>
     <File fileId="6" filename="$data/shaders/vehicleShader.xml"/>
-    <File fileId="4" filename="$data/shared/default_normal.dds"/>
-    <File fileId="5" filename="$data/shared/default_vmask.dds"/>
     <File fileId="15" filename="$data/shared/detailLibrary/flat_normal.png"/>
     <File fileId="9" filename="$data/shared/detailLibrary/metallic/metalGalvanized_diffuse.png"/>
     <File fileId="8" filename="$data/shared/detailLibrary/metallic/metalGalvanized_normal.png"/>
@@ -25,11 +23,13 @@
     <File fileId="20" filename="$data/shared/detailLibrary/nonMetallic/rubber/rubber_normal.png"/>
     <File fileId="19" filename="$data/shared/detailLibrary/nonMetallic/rubber/rubber_specular.png"/>
     <File fileId="3" filename="$data/shared/white_diffuse.dds"/>
+    <File fileId="4" filename="textures/slurryPump_normal.dds"/>
+    <File fileId="5" filename="textures/slurryPump_vmask.dds"/>
   </Files>
 
 
   <Materials>
-    <Material name="bronzeScratched_mat" materialId="84" customShaderId="6">
+    <Material name="bronzeScratched_mat" materialId="122" customShaderId="6">
       <Texture fileId="3"/>
       <Normalmap fileId="4"/>
       <Glossmap fileId="5"/>
@@ -38,9 +38,9 @@
       <Custommap name="detailDiffuse" fileId="23"/>
       <CustomParameter name="colorScale" value="0.9647 0.4179 0.147"/>
     </Material>
-    <Material name="lambert1" materialId="85" diffuseColor="0.8 0.8 0.8 1" specularColor="0.501961 1 0">
+    <Material name="lambert1" materialId="123" diffuseColor="0.8 0.8 0.8 1" specularColor="0.501961 1 0">
     </Material>
-    <Material name="metalGalvanized_mat" materialId="86" customShaderId="6">
+    <Material name="metalGalvanized_mat" materialId="124" customShaderId="6">
       <Texture fileId="3"/>
       <Normalmap fileId="4"/>
       <Glossmap fileId="5"/>
@@ -48,7 +48,7 @@
       <Custommap name="detailNormal" fileId="8"/>
       <Custommap name="detailDiffuse" fileId="9"/>
     </Material>
-    <Material name="metalPaintedBlack_mat" materialId="87" customShaderId="6">
+    <Material name="metalPaintedBlack_mat" materialId="125" customShaderId="6">
       <Texture fileId="3"/>
       <Normalmap fileId="4"/>
       <Glossmap fileId="5"/>
@@ -57,13 +57,16 @@
       <Custommap name="detailDiffuse" fileId="16"/>
       <CustomParameter name="colorScale" value="0.012 0.012 0.012"/>
     </Material>
-    <Material name="plasticPainted_mat_PTOYellow" materialId="143" customShaderId="6">
+    <Material name="plasticPainted_mat_PTOYellow" materialId="126" customShaderId="6">
+      <Texture fileId="3"/>
+      <Normalmap fileId="4"/>
+      <Glossmap fileId="5"/>
       <Custommap name="detailSpecular" fileId="24"/>
       <Custommap name="detailNormal" fileId="15"/>
       <Custommap name="detailDiffuse" fileId="25"/>
-      <CustomParameter name="colorScale" value="0.5 0.5 0"/>
+      <CustomParameter name="colorScale" value="0.673 0.478 0.023"/>
     </Material>
-    <Material name="rubberBlack_mat" materialId="89" customShaderId="6">
+    <Material name="rubberBlack_mat" materialId="127" customShaderId="6">
       <Texture fileId="3"/>
       <Normalmap fileId="4"/>
       <Glossmap fileId="5"/>
@@ -72,7 +75,7 @@
       <Custommap name="detailDiffuse" fileId="21"/>
       <CustomParameter name="porosity" value="0.5"/>
     </Material>
-    <Material name="silverScratched_mat" materialId="90" customShaderId="6">
+    <Material name="silverScratched_mat" materialId="128" customShaderId="6">
       <Texture fileId="3"/>
       <Normalmap fileId="4"/>
       <Glossmap fileId="5"/>
@@ -87,43 +90,43 @@
   </Shapes>
 
   <Scene>
-    <Shape name="PTOSlurryPump_main_component1" shapeId="1" dynamic="true" compound="true" collisionFilterGroup="0x10004" collisionFilterMask="0xfe3ffb83" clipDistance="300" nodeId="95" castsShadows="false" receiveShadows="false" nonRenderable="true" materialIds="85">
-      <Shape name="PTOSlurryPump_vis" shapeId="2" clipDistance="300" nodeId="96" castsShadows="false" receiveShadows="false" materialIds="86,87,90,89,84,143">
-        <TransformGroup name="attachable" nodeId="97">
-          <TransformGroup name="attacherJointImplement" nodeId="98">
-            <TransformGroup name="attacherJoint" translation="0 0.196197 0.546269" rotation="0 90 0" nodeId="99"/>
-            <TransformGroup name="topReferenceNode" translation="0 0.795 0.538387" nodeId="100"/>
-            <TransformGroup name="PTOInputNode" translation="-6.877e-07 0.479755 0.370801" rotation="0 180 0" nodeId="101"/>
+    <Shape name="PTOSlurryPump_main_component1" shapeId="1" dynamic="true" compound="true" collisionFilterGroup="0x10004" collisionFilterMask="0xfe3ffb83" clipDistance="300" nodeId="133" castsShadows="false" receiveShadows="false" nonRenderable="true" materialIds="123">
+      <Shape name="PTOSlurryPump_vis" shapeId="2" clipDistance="300" nodeId="134" castsShadows="false" receiveShadows="false" materialIds="124,125,128,127,122,126">
+        <TransformGroup name="attachable" nodeId="135">
+          <TransformGroup name="attacherJointImplement" nodeId="136">
+            <TransformGroup name="attacherJoint" translation="0 0.196197 0.546269" rotation="0 90 0" nodeId="137"/>
+            <TransformGroup name="topReferenceNode" translation="0 0.795 0.538387" nodeId="138"/>
+            <TransformGroup name="PTOInputNode" translation="-6.877e-07 0.479755 0.370801" rotation="0 180 0" nodeId="139"/>
           </TransformGroup>
-          <TransformGroup name="connectionHoses" nodeId="102">
-            <TransformGroup name="connectorFitting" translation="0.012245 0.80273 0.36104" nodeId="103"/>
-            <TransformGroup name="hydraulicIn01" translation="-0.217891 0.863141 0.456799" nodeId="104"/>
-            <Shape name="hydraulicIn01_detached" translation="-0.217891 0.863141 0.456799" shapeId="3" nodeId="105" castsShadows="true" receiveShadows="true" materialIds="89"/>
+          <TransformGroup name="connectionHoses" nodeId="140">
+            <TransformGroup name="connectorFitting" translation="0.012245 0.80273 0.36104" nodeId="141"/>
+            <TransformGroup name="hydraulicIn01" translation="-0.217891 0.863141 0.456799" nodeId="142"/>
+            <Shape name="hydraulicIn01_detached" translation="-0.217891 0.863141 0.456799" shapeId="3" nodeId="143" castsShadows="true" receiveShadows="true" materialIds="127"/>
           </TransformGroup>
-          <TransformGroup name="linkBalls" nodeId="106">
-            <TransformGroup name="linkBallNode01" translation="-0.502802 0.196197 0.546269" nodeId="107"/>
-            <TransformGroup name="linkBallNode02" translation="-0.438904 0.196197 0.546269" nodeId="108"/>
-            <TransformGroup name="linkBallNode03" translation="0.438904 0.196197 0.546269" nodeId="109"/>
-            <TransformGroup name="linkBallNode04" translation="0.502802 0.196197 0.546269" nodeId="110"/>
-            <TransformGroup name="linkBallNode05" translation="0 0.795 0.538387" nodeId="111"/>
+          <TransformGroup name="linkBalls" nodeId="144">
+            <TransformGroup name="linkBallNode01" translation="-0.502802 0.196197 0.546269" nodeId="145"/>
+            <TransformGroup name="linkBallNode02" translation="-0.438904 0.196197 0.546269" nodeId="146"/>
+            <TransformGroup name="linkBallNode03" translation="0.438904 0.196197 0.546269" nodeId="147"/>
+            <TransformGroup name="linkBallNode04" translation="0.502802 0.196197 0.546269" nodeId="148"/>
+            <TransformGroup name="linkBallNode05" translation="0 0.795 0.538387" nodeId="149"/>
           </TransformGroup>
-          <TransformGroup name="attacherJointImplement" translation="0 0.196197 0.546269" nodeId="112">
-            <TransformGroup name="topReferenceNode" translation="0 0.598803 -0.00788152" nodeId="113"/>
+          <TransformGroup name="attacherJointImplement" translation="0 0.196197 0.546269" nodeId="150">
+            <TransformGroup name="topReferenceNode" translation="0 0.598803 -0.00788152" nodeId="151"/>
           </TransformGroup>
         </TransformGroup>
-        <TransformGroup name="SPS_PTOSlurryPump" nodeId="114">
-          <TransformGroup name="pipeCouplers" nodeId="115">
-            <TransformGroup name="PTOSlurryPump_vis1" nodeId="116">
-              <TransformGroup name="SPS_pipeCoupler01" translation="-0.801599 0.394212 -0.175033" rotation="0 90 0" nodeId="117">
-                <TransformGroup name="SPS_pipeCoupler01Arcs" translation="-7.02678e-09 0 0" rotation="-0 -90 0" nodeId="220">
-                  <TransformGroup name="SPS_pipeCoupler01Arc01" translation="-2.5 0 -1.5" nodeId="221"/>
-                  <TransformGroup name="SPS_pipeCoupler01Arc02" translation="-2.5 0 1.5" nodeId="222"/>
+        <TransformGroup name="SPS_PTOSlurryPump" nodeId="152">
+          <TransformGroup name="pipeCouplers" nodeId="153">
+            <TransformGroup name="PTOSlurryPump_vis1" nodeId="154">
+              <TransformGroup name="SPS_pipeCoupler01" translation="-0.801599 0.394212 -0.175033" rotation="0 90 0" nodeId="155">
+                <TransformGroup name="SPS_pipeCoupler01Arcs" translation="-7.02678e-09 0 0" rotation="-0 -90 0" nodeId="156">
+                  <TransformGroup name="SPS_pipeCoupler01Arc01" translation="-2.5 0 -1.5" nodeId="157"/>
+                  <TransformGroup name="SPS_pipeCoupler01Arc02" translation="-2.5 0 1.5" nodeId="158"/>
                 </TransformGroup>
               </TransformGroup>
-              <TransformGroup name="SPS_pipeCoupler02" translation="0.476928 0.297513 -1.10918" rotation="-19.8583 -0 0" nodeId="121">
-                <TransformGroup name="SPS_pipeCoupler02Arcs" rotation="19.8583 -0 0" nodeId="122">
-                  <TransformGroup name="SPS_pipeCoupler02Arc01" translation="1.5 4.79573e-08 -2.5" rotation="1.70755e-06 -0 0" nodeId="123"/>
-                  <TransformGroup name="SPS_pipeCoupler02Arc02" translation="-1.5 7.77596e-08 -2.5" rotation="1.70755e-06 -0 0" nodeId="124"/>
+              <TransformGroup name="SPS_pipeCoupler02" translation="0.476928 0.297513 -1.10918" rotation="-19.8583 -0 0" nodeId="159">
+                <TransformGroup name="SPS_pipeCoupler02Arcs" rotation="19.8583 -0 0" nodeId="160">
+                  <TransformGroup name="SPS_pipeCoupler02Arc01" translation="1.5 4.79573e-08 -2.5" rotation="1.70755e-06 -0 0" nodeId="161"/>
+                  <TransformGroup name="SPS_pipeCoupler02Arc02" translation="-1.5 7.77596e-08 -2.5" rotation="1.70755e-06 -0 0" nodeId="162"/>
                 </TransformGroup>
               </TransformGroup>
             </TransformGroup>

@@ -10,6 +10,8 @@ SPSPipeChain.__index = SPSPipeChain
 
 SPSPipeChain.PIPE_LENGTH   = 4.0
 SPSPipeChain.PLAYER_OFFSET = 0.75
+SPSPipeChain.NUM_BONES         = 14
+SPSPipeChain.PIPE_FLOOR_RADIUS = 0.08    -- measured: bone centre to pipe bottom
 
 function SPSPipeChain.new(anchorCoupling, modDirectory)
     local self            = setmetatable({}, SPSPipeChain)
@@ -18,6 +20,8 @@ function SPSPipeChain.new(anchorCoupling, modDirectory)
     self.segments         = {}
     self.liveSegment      = nil
     self.dockingStation   = nil
+    self.localStart       = false
+    self.localStartNode   = nil
     return self
 end
 
@@ -38,23 +42,38 @@ end
 -- First pipe uses caller sx/sy/sz/sry (anchorCoupling position).
 -- Chained pipes derive position and rotation from previous segment geometry.
 -- ---------------------------------------------------------------------------
-function SPSPipeChain:startLaying(sx, sy, sz, sry)
+function SPSPipeChain:startLaying(sx, sy, sz, sry, localStartNode)
     if self.liveSegment ~= nil then return end
 
+    -- Placeable anchors can pass their real mount node here.  Segment 1 is then
+    -- linked to that node and set to local 0,0,0 / 0,0,0, matching the vehicle
+    -- coupler behaviour at the actual connector node instead of rebuilding from
+    -- world yaw only.
+    local useLocalStart = #self.segments == 0 and localStartNode ~= nil and localStartNode ~= 0
+    if useLocalStart and entityExists ~= nil and not entityExists(localStartNode) then
+        useLocalStart = false
+    end
+
+    local seg = self:_loadPipe(sx, sy, sz, sry or 0, nil, nil, nil, useLocalStart and localStartNode or nil)
+    if seg == nil then return end
+
+    if useLocalStart then
+        self.localStart = true
+        self.localStartNode = localStartNode
+    end
+
     if #self.segments > 0 then
-        local prevSeg     = self.segments[#self.segments]
-        local prx, _, prz = getWorldTranslation(prevSeg.pipeRoot)
-        sx, sy, sz        = getWorldTranslation(prevSeg.endConnectors)
-        local ddx  = sx - prx
-        local ddz  = sz - prz
-        local dlen = math.sqrt(ddx * ddx + ddz * ddz)
-        if dlen > 0.01 then
-            sry = math.atan2(-ddx / dlen, -ddz / dlen)
+        -- Link pipe 3's pipeRoot to pipe 2's endConnectors in local space.
+        -- This makes pipe 3 follow pipe 2's end automatically, using the
+        -- full rot and trans of the connection point — no world-space math.
+        local prevSeg = self.segments[#self.segments]
+        if prevSeg.endConnectors ~= nil and prevSeg.endConnectors ~= 0 then
+            link(prevSeg.endConnectors, seg.pipeRoot)
+            setTranslation(seg.pipeRoot, 0, 0, 0)
+            setRotation(seg.pipeRoot, 0, math.pi, 0)
         end
     end
 
-    local seg = self:_loadPipe(sx, sy, sz, sry or 0)
-    if seg == nil then return end
     self.liveSegment = seg
     print("[SPS] SPSPipeChain: started laying")
 end
@@ -82,14 +101,15 @@ function SPSPipeChain:lockLivePipe()
         table.insert(g_slurryPipeManager.chainTerminusEntries, seg.chainCoupling)
     end
 
-    -- Segment 1 only: register detNode04 as a chain start detection coupling
-    -- so vehicles can arc-detect the start end and connect a bez pipe to it.
+    -- Segment 1 only: register detNode01 (start of pipe) as a chain start
+    -- detection coupling so vehicles can arc-detect the start end and connect
+    -- a bez pipe to it.
     if #self.segments == 1 and g_slurryPipeManager ~= nil then
-        local detNode04 = seg.detNode04
-        if detNode04 ~= nil and detNode04 ~= 0 then
+        local detNode01 = seg.detNode01
+        if detNode01 ~= nil and detNode01 ~= 0 then
             local startCoupling = {
                 id                       = -2,
-                mountNode                = detNode04,
+                mountNode                = detNode01,
                 arcNode                  = nil,
                 isConnected              = false,
                 valveOpen                = false,
@@ -105,7 +125,7 @@ function SPSPipeChain:lockLivePipe()
             }
             seg.chainStartCoupling = startCoupling
             table.insert(g_slurryPipeManager.chainTerminusEntries, startCoupling)
-            print("[SPS] lockLivePipe: chain start detection coupling registered on detNode04")
+            print("[SPS] lockLivePipe: chain start detection coupling registered on detNode01")
 
             -- Vehicle anchor: auto-connect bez pipe between vehicle coupler and chain start.
             -- The anchor coupling is a vehicle coupling if it has no placeable.
@@ -136,12 +156,16 @@ function SPSPipeChain:lockLivePipe()
         end
     end
 
+    -- Terrain clamp: run once at lock time so the pipe drapes over ground
+    -- contours without cutting through. Never runs again after this.
+    self:_terrainClampBones(seg)
+
     -- Primary activatable at pipeRoot (start of segment): offers "remove from here"
     local activatable = SPSChainActivatable.new(self, #self.segments)
     g_currentMission.activatableObjectsSystem:addActivatable(activatable)
     seg.activatable = activatable
 
-    -- End activatable at detNode01 (end of segment): offers "lay more" / docking station
+    -- End activatable at detNode04 (end of segment): offers "lay more" / docking station
     local endActivatable = SPSChainActivatable.new(self, #self.segments)
     endActivatable.isEndActivatable = true
     g_currentMission.activatableObjectsSystem:addActivatable(endActivatable)
@@ -187,54 +211,73 @@ end
 
 -- ---------------------------------------------------------------------------
 -- Load a pipe i3d, link to world root, position at startX/Y/Z with startRY
+--
+-- New i3d layout (slurryPipe = pipeRoot):
+--   child 0  = hose            (skinned mesh)
+--   child 1  = startConnectors  → child 0=female01, 1=male01, 2=detectionNode01
+--   child 2  = endConnectors    → child 0=female02, 1=male02, 2=detectionNode04, 3=endFloorLevel, 4=nextPipeTarget
+--                                 (carries baked rotation 0,180,0)
+--   child 3..18 = Bone1 .. Bone16 (flat children of pipeRoot)
+--
+-- Variable naming follows the i3d node names:
+--   detNode01 = detection node at START of pipe (male side)
+--   detNode04 = detection node at END   of pipe (female side, where next segment plugs in)
 -- ---------------------------------------------------------------------------
-function SPSPipeChain:_loadPipe(startX, startY, startZ, startRY, colorR, colorG, colorB)
+function SPSPipeChain:_loadPipe(startX, startY, startZ, startRY, colorR, colorG, colorB, localStartNode)
     local pipePath = self.modDirectory .. "i3d/pipes/slurryPipe.i3d"
     local i3dRoot  = loadI3DFile(pipePath)
     if i3dRoot == nil or i3dRoot == 0 then
-        print("[SPS] SPSPipeChain: failed to load slurryPipe.i3d")
+        print("[SPS PC] _loadPipe: ERROR failed to load slurryPipe.i3d")
         return nil
     end
 
-    local pipeRoot      = getChildAt(i3dRoot, 0)
-    local endConnectors = getChildAt(pipeRoot, 15)
-    local detNode01     = getChildAt(endConnectors, 5)
-    local endFloorLevel = getChildAt(endConnectors, 6)
-    -- endConnectors: child 0=female02, child 1=male02
-    local femaleConn    = getChildAt(endConnectors, 0)
-    local maleConn      = getChildAt(endConnectors, 1)
-    local detNode04     = getChildAt(pipeRoot, 16)  -- chain start detection node (detectionNode04)
+    local pipeRoot        = getChildAt(i3dRoot, 0)
+    local startConnectors = getChildAt(pipeRoot, 1)
+    local endConnectors   = getChildAt(pipeRoot, 2)
 
-    -- Collect all 17 bones for bezier driving.
-    -- Bone1, Bone2: inside slurryPipeConnectors (pipeRoot child 1), children 2 and 3
-    -- Bone3-Bone15: pipeRoot children 2-14, each child 0
-    -- Bone16, Bone17: inside endConnectors (pipeRoot child 15), children 2 and 3
-    local connectorStartNode = getChildAt(pipeRoot, 1)
-    local allBones = {}
-    allBones[1]  = getChildAt(getChildAt(connectorStartNode, 2), 0)  -- Bone1
-    allBones[2]  = getChildAt(getChildAt(connectorStartNode, 3), 0)  -- Bone2
-    for i = 3, 15 do
-        local cj = getChildAt(pipeRoot, i - 1)
-        allBones[i] = getChildAt(cj, 0)
+    -- startConnectors children: 0=female01, 1=male01, 2=detectionNode01, 3=Bone1
+    local femaleStart = getChildAt(startConnectors, 0)
+    local maleStart   = getChildAt(startConnectors, 1)
+    local detNode01   = getChildAt(startConnectors, 2)
+    local bone1       = getChildAt(startConnectors, 3)
+
+    -- endConnectors children: 0=female02, 1=male02, 2=detectionNode04,
+    --                         3=Bone16, 4=endFloorLevel
+    local femaleConn     = getChildAt(endConnectors, 0)
+    local maleConn       = getChildAt(endConnectors, 1)
+    local detNode04      = getChildAt(endConnectors, 2)
+    local bone16         = getChildAt(endConnectors, 3)
+    local endFloorLevel  = getChildAt(endConnectors, 4)
+
+    if bone1 == nil or bone1 == 0 or bone16 == nil or bone16 == 0 then
+        print("[SPS PC] _loadPipe: ERROR Bone1 or Bone16 not found")
+        delete(i3dRoot)
+        return nil
     end
-    allBones[16] = getChildAt(getChildAt(endConnectors, 2), 0)  -- Bone16
-    allBones[17] = getChildAt(getChildAt(endConnectors, 3), 0)  -- Bone17
 
-    link(getRootNode(), pipeRoot)
-    setWorldTranslation(pipeRoot, startX, startY, startZ)
-    setWorldRotation(pipeRoot, 0, startRY, 0)
+    -- Interior bones: Bone2..Bone15 at pipeRoot children 3..16.
+    local allBones = {}
+    for i = 1, SPSPipeChain.NUM_BONES do
+        allBones[i] = getChildAt(pipeRoot, 2 + i)
+    end
+
+    if localStartNode ~= nil and localStartNode ~= 0
+    and (entityExists == nil or entityExists(localStartNode)) then
+        link(localStartNode, pipeRoot)
+        setTranslation(pipeRoot, 0, 0, 0)
+        setRotation(pipeRoot, 0, 0, 0)
+    else
+        link(getRootNode(), pipeRoot)
+        setWorldTranslation(pipeRoot, startX, startY, startZ)
+        setWorldRotation(pipeRoot, 0, startRY, 0)
+    end
     delete(i3dRoot)
 
-    -- Chain segment: start = male connector, end = female connector (always)
-    local connStart    = getChildAt(pipeRoot, 1)   -- slurryPipeConnectors
-    local femaleStart  = getChildAt(connStart, 0)  -- female01
-    local maleStart    = getChildAt(connStart, 1)  -- male01
     if femaleStart ~= nil and femaleStart ~= 0 then setVisibility(femaleStart, false) end
     if maleStart   ~= nil and maleStart   ~= 0 then setVisibility(maleStart,   true)  end
     if femaleConn  ~= nil and femaleConn  ~= 0 then setVisibility(femaleConn,  true)  end
     if maleConn    ~= nil and maleConn    ~= 0 then setVisibility(maleConn,    false) end
 
-    -- Apply pipe colour to hose mesh (pipeRoot child 0)
     local cr = colorR or (g_slurryPipeManager and g_slurryPipeManager.currentPipeColor.r or 0)
     local cg = colorG or (g_slurryPipeManager and g_slurryPipeManager.currentPipeColor.g or 0.05)
     local cb = colorB or (g_slurryPipeManager and g_slurryPipeManager.currentPipeColor.b or 0)
@@ -242,12 +285,12 @@ function SPSPipeChain:_loadPipe(startX, startY, startZ, startRY, colorR, colorG,
     if hoseNode ~= nil and hoseNode ~= 0 then
         setShaderParameter(hoseNode, "colorScale", cr, cg, cb, 0, false)
     else
-        print("[SPS PC] _loadPipe WARNING hoseNode is nil — colour not applied")
+        print("[SPS PC] _loadPipe: WARNING hoseNode nil — colour not applied")
     end
 
     local chainCoupling = {
         id                       = #self.segments + 1,
-        mountNode                = detNode01,
+        mountNode                = detNode04,
         arcNode                  = nil,
         isConnected              = false,
         valveOpen                = false,
@@ -261,22 +304,29 @@ function SPSPipeChain:_loadPipe(startX, startY, startZ, startRY, colorR, colorG,
         placeable                = self.anchorCoupling.placeable,
     }
 
+    print(string.format("[SPS PC] _loadPipe: OK seg pos=(%.3f,%.3f,%.3f) ry=%.3f bone1=%d bone16=%d",
+        startX, startY, startZ, startRY, bone1, bone16))
+
     return {
-        pipeRoot      = pipeRoot,
-        endConnectors = endConnectors,
-        detNode01     = detNode01,
-        detNode04     = detNode04,
-        endFloorLevel = endFloorLevel,
-        allBones      = allBones,
-        chainCoupling = chainCoupling,
-        activatable   = nil,
-        startX        = startX,
-        startY        = startY,
-        startZ        = startZ,
-        startRY       = startRY,
-        colorR        = cr,
-        colorG        = cg,
-        colorB        = cb,
+        pipeRoot        = pipeRoot,
+        startConnectors = startConnectors,
+        endConnectors   = endConnectors,
+        bone1           = bone1,
+        bone16          = bone16,
+        detNode01       = detNode01,
+        detNode04       = detNode04,
+        endFloorLevel   = endFloorLevel,
+        allBones        = allBones,
+        chainCoupling   = chainCoupling,
+        activatable     = nil,
+        startX          = startX,
+        startY          = startY,
+        startZ          = startZ,
+        startRY         = startRY,
+        colorR          = cr,
+        colorG          = cg,
+        colorB          = cb,
+        _hasLogged      = false,
     }
 end
 
@@ -315,40 +365,176 @@ function SPSPipeChain:update(dt)
     local _, floorOffset, _ = getTranslation(seg.endFloorLevel)
 
     setWorldTranslation(seg.endConnectors, ex, ey - floorOffset, ez)
-    setWorldRotation(seg.endConnectors, 0, math.atan2(dirX, dirZ) + math.pi, 0)
+    setWorldRotation(seg.endConnectors, 0, math.atan2(dirX, dirZ), 0)
 
     self:_updateBezierBones(seg)
 end
 
 -- ---------------------------------------------------------------------------
--- Bezier: P0 = pipeRoot, P3 = endConnectors
+-- _terrainClampBones
+-- Called once at lock time. Samples terrain at every other interior bone,
+-- pushes bones up if below terrain + pipe radius, interpolates non-sampled
+-- bones from their neighbours, then recomputes rotations from the adjusted
+-- positions. 7 terrain queries total — negligible CPU cost.
+-- ---------------------------------------------------------------------------
+function SPSPipeChain:_terrainClampBones(seg)
+    local terrain = g_currentMission and g_currentMission.terrainRootNode or nil
+    if terrain == nil then return end
+
+    local NUM    = SPSPipeChain.NUM_BONES
+    local RADIUS = SPSPipeChain.PIPE_FLOOR_RADIUS
+    local SAG    = 0.03   -- 30mm max reduction at centre
+
+    -- Collect world positions for all 16 bones.
+    -- Index 0 = Bone1 (endpoint), 1..NUM = interior, NUM+1 = Bone16 (endpoint).
+    local pos = {}
+    local b1x,  b1y,  b1z  = getWorldTranslation(seg.bone1)
+    local b16x, b16y, b16z = getWorldTranslation(seg.bone16)
+    pos[0]       = { b1x,  b1y,  b1z  }
+    pos[NUM + 1] = { b16x, b16y, b16z }
+    for i = 1, NUM do
+        local bone = seg.allBones[i]
+        if bone ~= nil and bone ~= 0 then
+            local x, y, z = getWorldTranslation(bone)
+            pos[i] = { x, y, z }
+        end
+    end
+
+    -- Sample terrain at every other interior bone (1,3,5,7,9,11,13 = 7 queries).
+    local terrainMinY = {}   -- stores terrain+radius floor for each sampled bone
+    local anyClamped = false
+    for i = 1, NUM, 2 do
+        if pos[i] ~= nil then
+            local ty = getTerrainHeightAtWorldPos(terrain, pos[i][1], 0, pos[i][3])
+            local minY = ty + RADIUS
+            terrainMinY[i] = minY
+            if pos[i][2] < minY then
+                pos[i][2] = minY
+                anyClamped = true
+            end
+        end
+    end
+
+    -- Interpolate non-sampled bones (2,4,6,8,10,12,14) from their sampled neighbours.
+    for i = 2, NUM, 2 do
+        if pos[i] ~= nil then
+            local prevY = pos[i - 1] and pos[i - 1][2] or pos[i][2]
+            local nextY = pos[i + 1] and pos[i + 1][2] or pos[i][2]
+            local interp = (prevY + nextY) * 0.5
+            if interp > pos[i][2] then
+                pos[i][2] = interp
+                anyClamped = true
+            end
+        end
+    end
+
+    -- Apply sine-shaped sag reduction: max SAG at centre tapering to 0 at endpoints.
+    -- Re-clamp sampled bones against terrain so sag never pushes below ground.
+    for i = 1, NUM do
+        if pos[i] ~= nil then
+            local t = i / (NUM + 1)
+            local reduction = SAG * math.sin(t * math.pi)
+            pos[i][2] = pos[i][2] - reduction
+            -- Re-clamp sampled bones against stored terrain floor.
+            local floor = terrainMinY[i]
+            if floor ~= nil and pos[i][2] < floor then
+                pos[i][2] = floor
+            end
+        end
+    end
+
+    -- Smoothing pass: blend each bone with its neighbours to remove the
+    -- zigzag caused by alternating sample/interpolate heights.
+    for i = 1, NUM do
+        if pos[i] ~= nil then
+            local prevY = pos[i - 1] and pos[i - 1][2] or pos[i][2]
+            local nextY = pos[i + 1] and pos[i + 1][2] or pos[i][2]
+            pos[i][2] = 0.25 * prevY + 0.5 * pos[i][2] + 0.25 * nextY
+        end
+    end
+
+    -- Apply corrected positions and recompute rotation from adjusted path.
+    for i = 1, NUM do
+        local bone = seg.allBones[i]
+        if bone ~= nil and bone ~= 0 and pos[i] ~= nil then
+            setWorldTranslation(bone, pos[i][1], pos[i][2], pos[i][3])
+
+            -- Tangent: central difference from prev to next bone.
+            local prev = pos[i - 1] or pos[i]
+            local next = pos[i + 1] or pos[i]
+            local tdx = next[1] - prev[1]
+            local tdy = next[2] - prev[2]
+            local tdz = next[3] - prev[3]
+            local tlen = math.sqrt(tdx*tdx + tdy*tdy + tdz*tdz)
+            if tlen > 0.0001 then
+                tdx = tdx / tlen
+                tdy = tdy / tlen
+                tdz = tdz / tlen
+                local ry = math.atan2(-tdx, -tdz)
+                local rx = math.atan2(tdy, math.sqrt(tdx*tdx + tdz*tdz))
+                setWorldRotation(bone, rx, ry, 0)
+            end
+        end
+    end
+end
+
+-- ---------------------------------------------------------------------------
+-- Bezier: P0 = Bone1 world pos, P3 = Bone16 world pos.
+-- P1 exits in pipeRoot's local direction (natural exit from coupler).
+-- P2 uses chord direction so it arrives at P3 from the correct side.
 -- ---------------------------------------------------------------------------
 function SPSPipeChain:_updateBezierBones(seg)
-    local p0x, p0y, p0z = getWorldTranslation(seg.pipeRoot)
-    local p3x, p3y, p3z = getWorldTranslation(seg.endConnectors)
+    if seg == nil or seg.bone1 == nil or seg.bone16 == nil
+    or seg.bone1 == 0 or seg.bone16 == 0 then
+        return
+    end
+    if entityExists ~= nil and (not entityExists(seg.bone1) or not entityExists(seg.bone16)) then
+        return
+    end
+
+    local p0x, p0y, p0z = getWorldTranslation(seg.bone1)
+    local p3x, p3y, p3z = getWorldTranslation(seg.bone16)
 
     local span = math.sqrt((p3x-p0x)^2 + (p3y-p0y)^2 + (p3z-p0z)^2)
     if span < 0.01 then return end
 
+    -- Chord direction: straight from P0 to P3.
+    local cdx = (p3x-p0x) / span
+    local cdy = (p3y-p0y) / span
+    local cdz = (p3z-p0z) / span
+
+    -- P1: exits from P0 in pipeRoot's natural direction.
     local t1x, t1y, t1z = localDirectionToWorld(seg.pipeRoot, 0, 0, -1)
 
-    local ecFwdX, ecFwdY, ecFwdZ = localDirectionToWorld(seg.endConnectors, 0, 0, -1)
-    local backX, backY, backZ = -ecFwdX, -ecFwdY, -ecFwdZ
-
-    local tension = math.max(span, 2.0) * 0.5
+    local tension = span * 0.4
+    local sag     = span * 0.04
 
     local p1x = p0x + t1x * tension
-    local p1y = p0y + t1y * tension
+    local p1y = p0y + t1y * tension - sag
     local p1z = p0z + t1z * tension
-    local p2x = p3x + backX * tension
-    local p2y = p3y + backY * tension
-    local p2z = p3z + backZ * tension
+    -- P2: approaches P3 from chord direction (not from endConnectors facing).
+    local p2x = p3x - cdx * tension
+    local p2y = p3y - cdy * tension - sag
+    local p2z = p3z - cdz * tension
 
-    local NUM = 17
+    -- One-shot log per segment.
+    if not seg._hasLogged then
+        seg._hasLogged = true
+        print(string.format("[SPS PC] bezier: P0=(%.3f,%.3f,%.3f) P3=(%.3f,%.3f,%.3f) span=%.3f",
+            p0x,p0y,p0z,p3x,p3y,p3z,span))
+        print(string.format("[SPS PC] bezier: t1=(%.3f,%.3f,%.3f) chord=(%.3f,%.3f,%.3f) tension=%.3f",
+            t1x,t1y,t1z,cdx,cdy,cdz,tension))
+        print(string.format("[SPS PC] bezier: P1=(%.3f,%.3f,%.3f) P2=(%.3f,%.3f,%.3f)",
+            p1x,p1y,p1z,p2x,p2y,p2z))
+    end
+
+    local NUM   = SPSPipeChain.NUM_BONES
+    local TOTAL = NUM + 1
+
     for i = 1, NUM do
         local bone = seg.allBones[i]
         if bone ~= nil and bone ~= 0 then
-            local t   = (i - 1) / (NUM - 1)
+            local t   = i / TOTAL
             local mt  = 1 - t
             local mt2 = mt * mt
             local mt3 = mt2 * mt
@@ -370,8 +556,8 @@ function SPSPipeChain:_updateBezierBones(seg)
                 tdz = tdz / tlen
             end
 
-            local ry = math.atan2(tdx, tdz)
-            local rx = -math.atan2(tdy, math.sqrt(tdx*tdx + tdz*tdz))
+            local ry = math.atan2(-tdx, -tdz)
+            local rx =  math.atan2( tdy, math.sqrt(tdx*tdx + tdz*tdz))
 
             setWorldTranslation(bone, bx, by, bz)
             setWorldRotation(bone, rx, ry, 0)
@@ -419,10 +605,13 @@ function SPSPipeChain:_destroySegmentNodes(seg)
 
     if seg.pipeRoot ~= nil and seg.pipeRoot ~= 0 then
         delete(seg.pipeRoot)
-        seg.pipeRoot      = nil
-        seg.endConnectors = nil
-        seg.detNode01     = nil
-        seg.endFloorLevel = nil
+        seg.pipeRoot        = nil
+        seg.startConnectors = nil
+        seg.endConnectors   = nil
+        seg.detNode01       = nil
+        seg.detNode04       = nil
+        seg.endFloorLevel   = nil
+        seg.nextPipeTarget  = nil
     end
 end
 
@@ -456,7 +645,7 @@ function SPSPipeChain:addDockingStation()
     removeFromPhysics(dsNode)
     link(getRootNode(), dsNode)
     setWorldTranslation(dsNode, ex, terrainY, ez)
-    setWorldRotation(dsNode, rx, ry, rz)
+    setWorldRotation(dsNode, rx, ry + math.pi, rz)
     addToPhysics(dsNode)
     delete(i3dRoot)
 
@@ -485,7 +674,7 @@ function SPSPipeChain:addDockingStation()
     end
 
     self._dsSaveX  = ex      ; self._dsSaveY  = terrainY ; self._dsSaveZ  = ez
-    self._dsSaveRX = rx      ; self._dsSaveRY = ry        ; self._dsSaveRZ = rz
+    self._dsSaveRX = rx      ; self._dsSaveRY = ry + math.pi ; self._dsSaveRZ = rz
 
     self.dockingStation = {
         dsNode        = dsNode,
@@ -537,15 +726,17 @@ function SPSPipeChain:_removeDockingStation()
         end
     end
 
-    -- Restore last segment's endConnectors to its pre-DS position
+    -- Restore last segment's endConnectors to its pre-DS position. During map quit
+    -- FS25 may already have deleted some nodes, so every node call is guarded.
     local ds = self.dockingStation
-    if ds.lastSeg ~= nil and ds.lastSeg.endConnectors ~= nil and ds.origEndX ~= nil then
+    if ds.lastSeg ~= nil and ds.lastSeg.endConnectors ~= nil and ds.lastSeg.endConnectors ~= 0
+    and ds.origEndX ~= nil and (entityExists == nil or entityExists(ds.lastSeg.endConnectors)) then
         setWorldTranslation(ds.lastSeg.endConnectors, ds.origEndX,  ds.origEndY,  ds.origEndZ)
         setWorldRotation(ds.lastSeg.endConnectors,    ds.origEndRX, ds.origEndRY, ds.origEndRZ)
         self:_updateBezierBones(ds.lastSeg)
     end
 
-    if ds.dsNode ~= nil and ds.dsNode ~= 0 then
+    if ds.dsNode ~= nil and ds.dsNode ~= 0 and (entityExists == nil or entityExists(ds.dsNode)) then
         delete(ds.dsNode)
     end
 
@@ -574,14 +765,18 @@ function SPSPipeChain:getSaveData()
         dsSaveRX          = self._dsSaveRX or 0,
         dsSaveRY          = self._dsSaveRY or 0,
         dsSaveRZ          = self._dsSaveRZ or 0,
+        localStart        = self.localStart == true,
         segments          = {},
     }
     if self.anchorCoupling.mountNode ~= nil then
         data.anchorX, data.anchorY, data.anchorZ =
             getWorldTranslation(self.anchorCoupling.mountNode)
     end
-    -- Save pipeRoot of first segment so vehicle chains restore from the correct start position
-    if #self.segments > 0 and self.segments[1].pipeRoot ~= nil then
+    -- Save pipeRoot of first segment so vehicle chains restore from the correct start position.
+    -- Placeable-local chains do not use this on reload; they relink segment 1 to the
+    -- anchor mount node and set local 0,0,0 / 0,0,0 again.
+    if not data.localStart and #self.segments > 0 and self.segments[1].pipeRoot ~= nil
+    and self.segments[1].pipeRoot ~= 0 and (entityExists == nil or entityExists(self.segments[1].pipeRoot)) then
         data.chainStartX, data.chainStartY, data.chainStartZ =
             getWorldTranslation(self.segments[1].pipeRoot)
         local _, chainStartRY, _ = getWorldRotation(self.segments[1].pipeRoot)
@@ -612,8 +807,16 @@ function SPSPipeChain:getSaveData()
 end
 
 function SPSPipeChain:restoreFromSaveData(data)
+    self.localStart = data.localStart == true
+    self.localStartNode = self.localStart and self.anchorCoupling.mountNode or nil
+
     local nextX, nextY, nextZ, nextRY
-    if data.chainStartX ~= nil then
+    if self.localStart and self.localStartNode ~= nil and self.localStartNode ~= 0
+    and (entityExists == nil or entityExists(self.localStartNode)) then
+        nextX, nextY, nextZ = getWorldTranslation(self.localStartNode)
+        local _, ry, _ = getWorldRotation(self.localStartNode)
+        nextRY = ry
+    elseif data.chainStartX ~= nil then
         nextX, nextY, nextZ = data.chainStartX, data.chainStartY, data.chainStartZ
         -- chainStartRY is saved as getWorldRotation(segments[1].pipeRoot) — use it directly
         -- so the bezier tangent at the coupler end matches the original pipe layout.
@@ -625,15 +828,16 @@ function SPSPipeChain:restoreFromSaveData(data)
     end
 
     for i, segData in ipairs(data.segments) do
+        local localNode = (i == 1 and self.localStart) and self.localStartNode or nil
         local seg = self:_loadPipe(nextX, nextY, nextZ, nextRY,
-            segData.colorR, segData.colorG, segData.colorB)
+            segData.colorR, segData.colorG, segData.colorB, localNode)
         if seg == nil then break end
         -- Compute clean rotation for endConnectors matching how update() sets it during gameplay
         local p0x, p0y, p0z = getWorldTranslation(seg.pipeRoot)
         local dx = segData.x - p0x
         local dz = segData.z - p0z
         local len = math.sqrt(dx*dx + dz*dz)
-        local cleanRY = len > 0.001 and (math.atan2(dx / len, dz / len) + math.pi) or 0
+        local cleanRY = len > 0.001 and math.atan2(dx / len, dz / len) or 0
         setWorldTranslation(seg.endConnectors, segData.x, segData.y, segData.z)
         setWorldRotation(seg.endConnectors, 0, cleanRY, 0)
         self:_updateBezierBones(seg)
@@ -642,15 +846,15 @@ function SPSPipeChain:restoreFromSaveData(data)
             table.insert(g_slurryPipeManager.chainTerminusEntries, seg.chainCoupling)
         end
 
-        -- Segment 1 only: recreate chainStartCoupling at detNode04 so the saved
-        -- bez connection can be restored by tryResolvePendingConnections.
+        -- Segment 1 only: recreate chainStartCoupling at detNode01 (start of pipe)
+        -- so the saved bez connection can be restored by tryResolvePendingConnections.
         -- Do NOT auto-connect here — the saved connection handles that.
         if i == 1 and g_slurryPipeManager ~= nil then
-            local detNode04 = seg.detNode04
-            if detNode04 ~= nil and detNode04 ~= 0 then
+            local detNode01 = seg.detNode01
+            if detNode01 ~= nil and detNode01 ~= 0 then
                 local startCoupling = {
                     id                       = -2,
-                    mountNode                = detNode04,
+                    mountNode                = detNode01,
                     arcNode                  = nil,
                     isConnected              = false,
                     valveOpen                = false,
@@ -673,7 +877,7 @@ function SPSPipeChain:restoreFromSaveData(data)
         local activatable = SPSChainActivatable.new(self, #self.segments)
         g_currentMission.activatableObjectsSystem:addActivatable(activatable)
         seg.activatable = activatable
-        -- End activatable at detNode01 (lay more / DS) — only for the last segment
+        -- End activatable at detNode04 (lay more / DS) — only for the last segment
         local endActivatable = SPSChainActivatable.new(self, #self.segments)
         endActivatable.isEndActivatable = true
         g_currentMission.activatableObjectsSystem:addActivatable(endActivatable)
@@ -751,6 +955,18 @@ function SPSPipeChain:_restoreDockingStation(data)
         origEndRX     = origErx, origEndRY = origEry, origEndRZ = origErz,
     }
     if self.anchorCoupling ~= nil then
-        self.anchorCoupling.valveOpen = true
+        -- Restore the DS-open valve state through the manager so the real
+        -- anchor coupler handle is opened as well as the flow bool. Do not
+        -- send a network event here; this is savegame reconstruction and the
+        -- manager's coupler-animation restore pass will snap to saved time
+        -- afterwards if an animation state was saved.
+        if g_slurryPipeManager ~= nil then
+            g_slurryPipeManager:applyValveState(nil, self.anchorCoupling.id, true, self.anchorCoupling)
+        else
+            self.anchorCoupling.valveOpen = true
+            if SPSCouplerAnimator ~= nil and self.anchorCoupling.valveAnim ~= nil then
+                SPSCouplerAnimator.play(self.anchorCoupling.valveAnim, 1)
+            end
+        end
     end
 end

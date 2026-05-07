@@ -214,6 +214,45 @@ function SPSCouplerAnimator._applyAt(inst, t)
 end
 
 
+-- ---------------------------------------------------------------------------
+-- Save / restore helpers
+-- ---------------------------------------------------------------------------
+-- Returns the exact runtime state needed by SlurryPipeManager so coupler
+-- animations can be written into FS25_SlurryPipeSystem.xml. This mirrors the
+-- basegame idea of saving animation time + direction, but stays independent
+-- from vehicle/placeable AnimatedObject systems.
+function SPSCouplerAnimator.getSaveState(inst)
+    if inst == nil then return nil end
+
+    return {
+        animId    = inst.animId,
+        time      = inst.currentTime or 0,
+        direction = inst.direction or 0,
+        playing   = inst.playing == true,
+        duration  = inst.duration or 0,
+    }
+end
+
+-- Restores a previously saved animation state and immediately applies the pose
+-- to the bound nodes. This is what makes a reloaded coupler handle/connector
+-- appear in the saved position without waiting for another event.
+function SPSCouplerAnimator.restoreState(inst, time, direction, playing)
+    if inst == nil then return end
+
+    local duration = inst.duration or 0
+    local t = time or 0
+    if t == math.huge then
+        t = duration
+    end
+
+    inst.currentTime = math.clamp(t, 0, duration)
+    inst.direction   = direction or 0
+    inst.playing     = playing == true and inst.direction ~= 0
+
+    SPSCouplerAnimator._applyAt(inst, inst.currentTime)
+end
+
+
 function SPSCouplerAnimator.update(inst, dt)
     if inst == nil or not inst.playing then return end
     local dtSec = dt * 0.001

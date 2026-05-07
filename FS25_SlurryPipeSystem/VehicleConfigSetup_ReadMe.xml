@@ -26,87 +26,23 @@
 
 
     <!-- ========================================================================
-         INTERNAL CONFIG - FOLDER STRUCTURE & MANIFEST
+         INTERNAL CONFIG - FOLDER STRUCTURE
     =========================================================================
 
     FS25_SlurryPipeSystem/
     └── configs/
-        ├── spsConfigManifest.xml           ← lists every supported vehicle/placeable
-        ├── couplerAnimations.xml           ← bundled coupler animations library
-        │
-        ├── data/                           ← stock fleet (mirrors game's data/ paths)
-        │   └── vehicles/
-        │       └── <vendor>/<model>/
-        │           ├── fillPoints.xml      ← vehicle SPS config
-        │           └── nodeTree.i3d        ← SPS nodes for this vehicle
-        │
-        └── mods/                           ← third-party fleet (mirrors mods/ paths)
-            └── <FS25_ModFolderName>/
-                ├── fillPoints.xml
-                └── nodeTree.i3d
+        ├── vehicleConfigs/
+        │   ├── manifest.xml                ← lists every vehicle folder
+        │   ├── <vehicleName>/
+        │   │   ├── fillPoints.xml          ← vehicle SPS config
+        │   │   └── nodeTree.i3d            ← SPS nodes for this vehicle
+        │   └── ...
+        └── couplerAnimations.xml           ← bundled coupler animations library
 
-    The bundled folder structure mirrors the runtime path of each vehicle.
-    Each vehicle has a manifest entry of the form:
-
-        <vehicle path="data/vehicles/kaweco/profi2/profi2.xml"/>
-        <vehicle path="mods/FS25_Pichon_BMIX80/BMIX.xml"/>
-
-    The "path" attribute must EXACTLY match the tail of the runtime vehicle's
-    configFileName (case-insensitive). When the match succeeds, SPS opens the
-    bundled fillPoints.xml from a path computed by:
-
-        1. Take the manifest path
-        2. Strip the trailing XML filename
-        3. Prepend "configs/"
-        4. Append "fillPoints.xml"
-
-    Example:
-        path="data/vehicles/kaweco/profi2/profi2.xml"
-          → configs/data/vehicles/kaweco/profi2/fillPoints.xml
-
-        path="mods/FS25_Pichon_BMIX80/BMIX.xml"
-          → configs/mods/FS25_Pichon_BMIX80/fillPoints.xml
-
-    ── OPTIONAL configFolder OVERRIDE ───────────────────────────────────────
-
-    If a mod ships multiple XMLs in the same folder (e.g. mods/X/cab.xml and
-    mods/X/trailer.xml), auto-derivation would collide on the same bundled
-    fillPoints folder. Use the optional configFolder attribute to declare
-    each entry's bundled location independently:
-
-        <vehicle path="mods/X/cab.xml"
-                 configFolder="mods/X/cab"/>
-        <vehicle path="mods/X/trailer.xml"
-                 configFolder="mods/X/trailer"/>
-
-        → configs/mods/X/cab/fillPoints.xml
-        → configs/mods/X/trailer/fillPoints.xml
-
-    The "path" attribute always matches the runtime configFileName. The
-    "configFolder" attribute (when present) overrides where the bundled
-    fillPoints.xml lives under configs/.
-
-    ======================================================================== -->
-
-
-    <!-- ========================================================================
-         BUNDLED VS EMBEDDED — WHEN TO USE WHICH
-    =========================================================================
-
-    INTERNAL/BUNDLED is for vehicles SPS itself supports out of the box.
-    The vehicle XML stays untouched (third-party or stock); the fillPoints.xml
-    and nodeTree.i3d live inside the SPS mod folder. SPS knows about the
-    vehicle via a manifest entry.
-
-    EMBEDDED is for third-party modders shipping SPS-ready vehicles. The
-    modder adds a <slurryPipeSystem> block directly inside their vehicle XML.
-    No SPS-side files needed. No manifest entry needed. The block self-
-    contains everything: pipe couplings, coupler animations, fill arms.
-
-    Embedded ALWAYS wins over manifest. If both exist for the same
-    configFileName, the embedded block is used. This lets modders ship
-    their own version of any vehicle without conflicting with stock
-    SPS support for the same vehicle name.
+    The folder name under vehicleConfigs/ must match the vehicle's i3d filename
+    (without extension). The manager scans manifest.xml at boot and builds a
+    map of folder names; at register time it matches the folder name against
+    the loaded vehicle's configFileName by substring.
 
     ======================================================================== -->
 

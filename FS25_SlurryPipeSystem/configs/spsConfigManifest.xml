@@ -37,13 +37,17 @@
         <!-- Stock vehicles -->
         <vehicle path="data/vehicles/kaweco/profi2/profi2.xml"/>
         <vehicle path="data/vehicles/kotte/frc65/frc65.xml"/>
+		<vehicle path="data/vehicles/kotte/pq32000/pq32000.xml"/>
+		<vehicle path="data/vehicles/kotte/tsa/tsa.xml"/>
+		<vehicle path="data/vehicles/oxbo/at5105/at5105.xml"/>
+		<vehicle path="data/vehicles/samsonAgro/pgII28Genesis/pgII28Genesis.xml"/>
+		<vehicle path="data/vehicles/zunhammer/ult18/ult18.xml"/>
+		<vehicle path="data/vehicles/zunhammer/ult24/ult24.xml"/>
 
         <!-- Mod vehicles -->
         <vehicle path="mods/FS25_Joskin_Cobra/cobra.xml"/>
-        <vehicle path="mods/FS25_Kotte_TSA/tsa.xml"/>
         <vehicle path="mods/FS25_Pichon_BMIX80/BMIX.xml"/>
-        <vehicle path="mods/FS25_Samson_PGIIGenesis_Pack/SamsonPG28/pgII28Genesis.xml"/>
-
+        
         <!-- PTOSlurryPump uses embedded <slurryPipeSystem>, no manifest entry needed -->
     </vehicleConfigs>
 

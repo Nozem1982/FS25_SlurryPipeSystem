@@ -8,9 +8,24 @@
 SPSPipeVisual = {}
 SPSPipeVisual.__index = SPSPipeVisual
 
-SPSPipeVisual.NUM_BONES      = 17
-SPSPipeVisual.TENSION_FACTOR = 0.4
-SPSPipeVisual.SAG_FACTOR     = 0.04
+-- i3d layout (slurryPipe = pipeRoot):
+--   child 0  = hose                  (skinned mesh, 16 skin-bound bones)
+--   child 1  = startConnectors       → child 0=female01, 1=male01,
+--                                       2=detectionNode01, 3=Bone1
+--   child 2  = endConnectors         → rotation (0,180,0) — blue arrow OUT
+--                                       child 0=female02, 1=male02,
+--                                       2=detectionNode04, 3=Bone16,
+--                                       4=endFloorLevel, 5=nextPipeTarget
+--   child 3..16 = Bone2..Bone15      (14 interior bones, flat children)
+--
+-- Bezier runs from Bone1's world position to Bone16's world position.
+-- These are read after pipeRoot and endConnectors are snapped, so they
+-- already reflect the correct world positions. Interior bones sample evenly
+-- between them, matching the skin bind spacing exactly.
+
+SPSPipeVisual.NUM_INTERIOR_BONES = 14
+SPSPipeVisual.TENSION_FACTOR     = 0.4
+SPSPipeVisual.SAG_FACTOR         = 0.08
 
 function SPSPipeVisual.new(modDirectory)
     local self = setmetatable({}, SPSPipeVisual)
@@ -23,8 +38,9 @@ function SPSPipeVisual:load()
     local pipePath = self.modDirectory .. "i3d/pipes/slurryPipe.i3d"
     if fileExists(pipePath) then
         self._isLoaded = true
+        print("[SPS SPPV] load: OK " .. pipePath)
     else
-        print("[SPS SPPV] SPSPipeVisual: slurryPipe.i3d not found at " .. pipePath)
+        print("[SPS SPPV] load: ERROR not found " .. pipePath)
     end
 end
 
@@ -38,96 +54,123 @@ end
 
 -- ---------------------------------------------------------------------------
 -- createPipe
--- nodeA and nodeB are world nodes — their position and rotation drive the bezier.
--- startConnectorType: "male" (default) or "female" — controls which start
--- connector shape is shown (the end attached to nodeA / couplingA).
--- endConnectorType:   "male" or "female" (default) — controls which end
--- connector shape is shown (the end attached to nodeB / couplingB).
+-- nodeA: source coupler mountNode  — pipeRoot snaps here.
+-- nodeB: destination coupler mountNode — endConnectors snaps here.
+-- startConnectorType: "male" (default) or "female"
+-- endConnectorType:   "male" or "female" (default)
 -- ---------------------------------------------------------------------------
-function SPSPipeVisual:createPipe(nodeA, nodeB, startConnectorType, endConnectorType)
-    if not self._isLoaded then return nil end
+function SPSPipeVisual:createPipe(nodeA, nodeB, startConnectorType, endConnectorType, endFlip, startFlip)
+    if not self._isLoaded then
+        print("[SPS SPPV] createPipe: ERROR not loaded")
+        return nil
+    end
 
     local pipePath = self.modDirectory .. "i3d/pipes/slurryPipe.i3d"
     local i3dRoot = loadI3DFile(pipePath)
     if i3dRoot == nil or i3dRoot == 0 then
-        print("[SPS SPPV] SPSPipeVisual:createPipe - loadI3DFile failed")
+        print("[SPS SPPV] createPipe: ERROR loadI3DFile failed")
         return nil
     end
     link(getRootNode(), i3dRoot)
 
     local pipeRoot = getChildAt(i3dRoot, 0)
-
-    -- slurryPipeConnectors: pipeRoot child 1
-    -- children: 0=female01, 1=male01, 2=componentJoint1, 3=componentJoint2, 4=bezierStart
-    local connectorStart = getChildAt(pipeRoot, 1)
-
-    local bones = {}
-    -- Bone1: connectorStart child 2 (componentJoint1) child 0
-    -- Bone2: connectorStart child 3 (componentJoint2) child 0
-    bones[1] = getChildAt(getChildAt(connectorStart, 2), 0)
-    bones[2] = getChildAt(getChildAt(connectorStart, 3), 0)
-
-    -- Bones 3-15: pipeRoot children 2-14, each child 0
-    for i = 3, 15 do
-        local cj = getChildAt(pipeRoot, i - 1)
-        bones[i] = getChildAt(cj, 0)
-        if bones[i] == nil or bones[i] == 0 then
-            print("[SPS SPPV] SPSPipeVisual:createPipe - bone " .. i .. " not found")
-            delete(i3dRoot)
-            return nil
-        end
-    end
-
-    -- endConnectors: pipeRoot child 15
-    -- children: 0=female02, 1=male02, 2=componentJoint16, 3=componentJoint17, ...
-    local connectorEnd = getChildAt(pipeRoot, 15)
-
-    -- Bone16: endConnectors child 2 (componentJoint16) child 0
-    -- Bone17: endConnectors child 3 (componentJoint17) child 0
-    bones[16] = getChildAt(getChildAt(connectorEnd, 2), 0)
-    bones[17] = getChildAt(getChildAt(connectorEnd, 3), 0)
-
-    if bones[1]  == nil or bones[1]  == 0
-    or bones[17] == nil or bones[17] == 0 then
-        print("[SPS SPPV] SPSPipeVisual:createPipe - Bone1 or Bone17 not found")
+    if pipeRoot == nil or pipeRoot == 0 then
+        print("[SPS SPPV] createPipe: ERROR pipeRoot not found")
         delete(i3dRoot)
         return nil
     end
 
-    -- Start connector: show female01 (child 0) or male01 (child 1) based on type
-    local femaleStart = getChildAt(connectorStart, 0)
-    local maleStart   = getChildAt(connectorStart, 1)
+    local startConnectors = getChildAt(pipeRoot, 1)
+    local endConnectors   = getChildAt(pipeRoot, 2)
+    if startConnectors == nil or startConnectors == 0
+    or endConnectors   == nil or endConnectors   == 0 then
+        print("[SPS SPPV] createPipe: ERROR connector nodes not found")
+        delete(i3dRoot)
+        return nil
+    end
+
+    -- Bone1 and Bone16 are the bezier endpoints — they follow their parent
+    -- connectors and their world positions are read after the parent snaps.
+    local bone1  = getChildAt(startConnectors, 3)
+    local bone16 = getChildAt(endConnectors, 3)
+    if bone1 == nil or bone1 == 0 or bone16 == nil or bone16 == 0 then
+        print("[SPS SPPV] createPipe: ERROR Bone1 or Bone16 not found")
+        delete(i3dRoot)
+        return nil
+    end
+
+    local nextPipeTarget = nil  -- removed from i3d
+
+    -- Interior bones: Bone2..Bone15 at pipeRoot children 3..16.
+    local bones = {}
+    for i = 1, SPSPipeVisual.NUM_INTERIOR_BONES do
+        local boneNode = getChildAt(pipeRoot, 2 + i)
+        if boneNode == nil or boneNode == 0 then
+            print("[SPS SPPV] createPipe: ERROR interior bone " .. i .. " not found at pipeRoot child " .. (2+i))
+            delete(i3dRoot)
+            return nil
+        end
+        bones[i] = boneNode
+    end
+
+    print(string.format("[SPS SPPV] createPipe: OK — pipeRoot=%d bone1=%d bone16=%d bones=%d startFlip=%s endFlip=%s",
+        pipeRoot, bone1, bone16, #bones, tostring(startFlip), tostring(endFlip)))
+
+    -- Start connector visibility: female01 (child 0) or male01 (child 1)
+    local femaleStart = getChildAt(startConnectors, 0)
+    local maleStart   = getChildAt(startConnectors, 1)
     if startConnectorType == "female" then
         if femaleStart ~= nil and femaleStart ~= 0 then setVisibility(femaleStart, true) end
         if maleStart   ~= nil and maleStart   ~= 0 then setVisibility(maleStart, false) end
     else
-        -- default: male
         if femaleStart ~= nil and femaleStart ~= 0 then setVisibility(femaleStart, false) end
         if maleStart   ~= nil and maleStart   ~= 0 then setVisibility(maleStart, true) end
     end
 
-    -- End connector: show female02 (child 0) or male02 (child 1) based on type.
-    -- Default: female (matches stores and chain receivers which are typically female).
-    local femaleEnd = getChildAt(connectorEnd, 0)
-    local maleEnd   = getChildAt(connectorEnd, 1)
+    -- End connector visibility: female02 (child 0) or male02 (child 1)
+    local femaleEnd = getChildAt(endConnectors, 0)
+    local maleEnd   = getChildAt(endConnectors, 1)
     if endConnectorType == "male" then
         if femaleEnd ~= nil and femaleEnd ~= 0 then setVisibility(femaleEnd, false) end
         if maleEnd   ~= nil and maleEnd   ~= 0 then setVisibility(maleEnd, true) end
     else
-        -- default: female
         if femaleEnd ~= nil and femaleEnd ~= 0 then setVisibility(femaleEnd, true) end
         if maleEnd   ~= nil and maleEnd   ~= 0 then setVisibility(maleEnd, false) end
     end
 
     local inst = {
-        i3dRoot        = i3dRoot,
-        pipeRoot       = pipeRoot,
-        connectorStart = connectorStart,
-        connectorEnd   = connectorEnd,
-        bones          = bones,
-        nodeA          = nodeA,
-        nodeB          = nodeB,
+        i3dRoot         = i3dRoot,
+        pipeRoot        = pipeRoot,
+        startConnectors = startConnectors,
+        endConnectors   = endConnectors,
+        bone1           = bone1,
+        bone16          = bone16,
+        nextPipeTarget  = nextPipeTarget,
+        bones           = bones,
+        nodeA           = nodeA,
+        nodeB           = nodeB,
+        _hasLogged      = false,
     }
+
+    -- Link pipeRoot to nodeA in local space — pipe start follows source coupler.
+    link(nodeA, pipeRoot)
+    setTranslation(pipeRoot, 0, 0, 0)
+    if startFlip then
+        setRotation(pipeRoot, 0, math.pi, 0)
+    else
+        setRotation(pipeRoot, 0, 0, 0)
+    end
+
+    -- Link endConnectors to nodeB in local space — pipe end follows target coupler.
+    -- endFlip=true applies a local 180° Y rotation to compensate when nodeB
+    -- faces the same direction as the pipe (chain start case).
+    link(nodeB, endConnectors)
+    setTranslation(endConnectors, 0, 0, 0)
+    if endFlip then
+        setRotation(endConnectors, 0, math.pi, 0)
+    else
+        setRotation(endConnectors, 0, 0, 0)
+    end
 
     self:updatePipe(inst)
     return inst
@@ -135,8 +178,9 @@ end
 
 -- ---------------------------------------------------------------------------
 -- updatePipe
--- Called every tick. Snaps connectorStart to nodeA, connectorEnd to nodeB,
--- then positions all 17 bones along the bezier curve.
+-- Called every tick. pipeRoot and endConnectors are linked to their
+-- respective nodes in local space (done in createPipe) so they follow
+-- automatically. Only the bezier bones need updating each tick.
 -- ---------------------------------------------------------------------------
 function SPSPipeVisual:updatePipe(inst)
     if inst == nil then return end
@@ -144,52 +188,74 @@ function SPSPipeVisual:updatePipe(inst)
     local nodeA = inst.nodeA
     local nodeB = inst.nodeB
     if nodeA == nil or nodeB == nil then return end
+    if not entityExists(nodeA) or not entityExists(nodeB) then return end
 
     local ax, ay, az    = getWorldTranslation(nodeA)
     local bx, by, bz    = getWorldTranslation(nodeB)
     local arx, ary, arz = getWorldRotation(nodeA)
     local brx, bry, brz = getWorldRotation(nodeB)
 
-    -- Guard: if node was deleted its values will be nil
     if ax == nil or bx == nil or arx == nil or brx == nil then return end
 
-    setWorldTranslation(inst.connectorStart, ax, ay, az)
-    setWorldRotation(inst.connectorStart, arx, ary, arz)
+    -- 3) Read Bone1 and Bone16 world positions — these are the true bezier
+    --    endpoints and match the skin bind positions exactly.
+    if not entityExists(inst.bone1) or not entityExists(inst.bone16) then return end
+    local p0x, p0y, p0z = getWorldTranslation(inst.bone1)
+    local p3x, p3y, p3z = getWorldTranslation(inst.bone16)
 
-    setWorldTranslation(inst.connectorEnd, bx, by, bz)
-    if inst.connectorEndFlipped then
-        setWorldRotation(inst.connectorEnd, brx, bry + math.pi, brz)
-    else
-        setWorldRotation(inst.connectorEnd, brx, bry, brz)
-    end
-
-    local dx   = bx - ax
-    local dy   = by - ay
-    local dz   = bz - az
+    local dx   = p3x - p0x
+    local dy   = p3y - p0y
+    local dz   = p3z - p0z
     local span = math.sqrt(dx*dx + dy*dy + dz*dz)
     if span < 0.001 then return end
 
     local adx, ady, adz = localDirectionToWorld(nodeA, 0, 0, -1)
-    local bdx, bdy, bdz = localDirectionToWorld(nodeB, 0, 0, -1)
 
     local tension = span * SPSPipeVisual.TENSION_FACTOR
     local sag     = span * SPSPipeVisual.SAG_FACTOR
 
-    local p0x, p0y, p0z = ax, ay, az
-    local p3x, p3y, p3z = bx, by, bz
     local p1x = p0x + adx * tension
     local p1y = p0y + ady * tension - sag
     local p1z = p0z + adz * tension
-    local p2x = p3x + bdx * tension
-    local p2y = p3y + bdy * tension - sag
-    local p2z = p3z + bdz * tension
 
-    setWorldTranslation(inst.pipeRoot, (ax+bx)*0.5, (ay+by)*0.5, (az+bz)*0.5)
+    local p2dx = p0x - p3x
+    local p2dy = p0y - p3y
+    local p2dz = p0z - p3z
+    local p2dlen = math.sqrt(p2dx*p2dx + p2dy*p2dy + p2dz*p2dz)
+    if p2dlen > 0.001 then p2dx=p2dx/p2dlen p2dy=p2dy/p2dlen p2dz=p2dz/p2dlen end
+    local p2x = p3x + p2dx * tension
+    local p2y = p3y + p2dy * tension - sag
+    local p2z = p3z + p2dz * tension
 
-    local NUM = SPSPipeVisual.NUM_BONES
+    if not inst._hasLogged then
+        inst._hasLogged = true
+        print(string.format("[SPS SPPV] updatePipe: nodeA pos=(%.3f,%.3f,%.3f) rot=(%.3f,%.3f,%.3f)", ax,ay,az,arx,ary,arz))
+        print(string.format("[SPS SPPV] updatePipe: nodeB pos=(%.3f,%.3f,%.3f) rot=(%.3f,%.3f,%.3f)", bx,by,bz,brx,bry,brz))
+        print(string.format("[SPS SPPV] updatePipe: Bone1 P0=(%.3f,%.3f,%.3f) Bone16 P3=(%.3f,%.3f,%.3f)", p0x,p0y,p0z,p3x,p3y,p3z))
+        print(string.format("[SPS SPPV] updatePipe: span=%.4f tension=%.4f sag=%.4f", span,tension,sag))
+        print(string.format("[SPS SPPV] updatePipe: P1=(%.3f,%.3f,%.3f) P2=(%.3f,%.3f,%.3f)", p1x,p1y,p1z,p2x,p2y,p2z))
+        print(string.format("[SPS SPPV] updatePipe: nodeA dir=(%.3f,%.3f,%.3f)", adx,ady,adz))
+        for i = 1, SPSPipeVisual.NUM_INTERIOR_BONES do
+            local t  = i / (SPSPipeVisual.NUM_INTERIOR_BONES + 1)
+            local mt = 1 - t
+            local px = mt^3*p0x + 3*mt^2*t*p1x + 3*mt*t^2*p2x + t^3*p3x
+            local py = mt^3*p0y + 3*mt^2*t*p1y + 3*mt*t^2*p2y + t^3*p3y
+            local pz = mt^3*p0z + 3*mt^2*t*p1z + 3*mt*t^2*p2z + t^3*p3z
+            local tdx = 3*mt^2*(p1x-p0x) + 6*mt*t*(p2x-p1x) + 3*t^2*(p3x-p2x)
+            local tdy = 3*mt^2*(p1y-p0y) + 6*mt*t*(p2y-p1y) + 3*t^2*(p3y-p2y)
+            local tdz = 3*mt^2*(p1z-p0z) + 6*mt*t*(p2z-p1z) + 3*t^2*(p3z-p2z)
+            local tlen = math.sqrt(tdx*tdx+tdy*tdy+tdz*tdz)
+            if tlen > 0.0001 then tdx=tdx/tlen tdy=tdy/tlen tdz=tdz/tlen end
+            local ry = math.atan2(-tdx,-tdz)
+            local rx = math.atan2(tdy, math.sqrt(tdx*tdx+tdz*tdz))
+            print(string.format("[SPS SPPV] bone[%02d] t=%.3f pos=(%.3f,%.3f,%.3f) rx=%.3f ry=%.3f", i,t,px,py,pz,rx,ry))
+        end
+    end
 
+    local NUM   = SPSPipeVisual.NUM_INTERIOR_BONES
+    local TOTAL = NUM + 1
     for i = 1, NUM do
-        local t   = (i - 1) / (NUM - 1)
+        local t   = i / TOTAL
         local mt  = 1 - t
         local mt2 = mt * mt
         local mt3 = mt2 * mt
@@ -211,8 +277,8 @@ function SPSPipeVisual:updatePipe(inst)
             tdz = tdz / tlen
         end
 
-        local ry = math.atan2(tdx, tdz)
-        local rx = -math.atan2(tdy, math.sqrt(tdx*tdx + tdz*tdz))
+        local ry = math.atan2(-tdx, -tdz)
+        local rx =  math.atan2( tdy, math.sqrt(tdx*tdx + tdz*tdz))
 
         setWorldTranslation(inst.bones[i], px, py, pz)
         setWorldRotation(inst.bones[i], rx, ry, 0)
@@ -221,18 +287,17 @@ end
 
 -- ---------------------------------------------------------------------------
 -- applyColor
--- Sets the colorScale shader parameter on the hose mesh of a pipe inst.
 -- ---------------------------------------------------------------------------
 function SPSPipeVisual:applyColor(inst, r, g, b)
     if inst == nil or inst.pipeRoot == nil then
-        print("[SPS SPPV] SPSPipeVisual:applyColor — inst or pipeRoot nil, skipping")
+        print("[SPS SPPV] applyColor: ERROR inst or pipeRoot nil")
         return
     end
     local hoseNode = getChildAt(inst.pipeRoot, 0)
     if hoseNode ~= nil and hoseNode ~= 0 then
         setShaderParameter(hoseNode, "colorScale", r, g, b, 0, false)
     else
-        print("[SPS SPPV] SPSPipeVisual:applyColor — hoseNode nil, colour not applied")
+        print("[SPS SPPV] applyColor: ERROR hoseNode nil")
     end
 end
 
@@ -241,8 +306,28 @@ end
 -- ---------------------------------------------------------------------------
 function SPSPipeVisual:destroyPipe(inst)
     if inst == nil then return end
-    if inst.i3dRoot ~= nil and inst.i3dRoot ~= 0 then
-        delete(inst.i3dRoot)
-        inst.i3dRoot = nil
+
+    -- During savegame quit/delete, FS25 may already have deleted linked parent
+    -- nodes. Never link/delete a node unless the entity still exists.
+    local i3dRootExists = inst.i3dRoot ~= nil and inst.i3dRoot ~= 0 and entityExists(inst.i3dRoot)
+
+    if inst.pipeRoot ~= nil and inst.pipeRoot ~= 0 and entityExists(inst.pipeRoot) then
+        link(getRootNode(), inst.pipeRoot)
     end
+
+    if inst.endConnectors ~= nil and inst.endConnectors ~= 0 and entityExists(inst.endConnectors) then
+        link(getRootNode(), inst.endConnectors)
+    end
+
+    if i3dRootExists then
+        delete(inst.i3dRoot)
+    end
+
+    inst.i3dRoot = nil
+    inst.pipeRoot = nil
+    inst.startConnectors = nil
+    inst.endConnectors = nil
+    inst.bone1 = nil
+    inst.bone16 = nil
+    inst.bones = nil
 end
