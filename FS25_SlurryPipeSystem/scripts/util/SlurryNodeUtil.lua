@@ -65,7 +65,7 @@ function SlurryNodeUtil.buildStoragePlaneSource(placeable, fillPlaneNode, minY, 
     end
 
     -- Try to find the storage object that manages this fill type.
-    -- Supports spec_silo (baseTank), spec_husbandry (cow shed etc.), spec_siloExtension.
+    -- Supports spec_silo (baseTank), spec_husbandry (cow shed etc.), spec_siloExtension, spec_productionPoint (BGA).
     -- If no storage is found, surface detection still works but flow will be inactive.
     local storage = nil
 
@@ -100,6 +100,12 @@ function SlurryNodeUtil.buildStoragePlaneSource(placeable, fillPlaneNode, minY, 
     if storage == nil and placeable.spec_siloExtension ~= nil
     and placeable.spec_siloExtension.storage ~= nil then
         storage = placeable.spec_siloExtension.storage
+    end
+
+    if storage == nil and placeable.spec_productionPoint ~= nil
+    and placeable.spec_productionPoint.productionPoint ~= nil
+    and placeable.spec_productionPoint.productionPoint.storage ~= nil then
+        storage = placeable.spec_productionPoint.productionPoint.storage
     end
 
     if storage == nil then

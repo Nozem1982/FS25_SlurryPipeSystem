@@ -12,22 +12,26 @@
       path="data/vehicles/kaweco/profi2/profi2.xml"
         -> configs/data/vehicles/kaweco/profi2/fillPoints.xml
 
-      path="mods/FS25_Pichon_BMIX80/BMIX.xml"
-        -> configs/mods/FS25_Pichon_BMIX80/fillPoints.xml
+      path="FS25_Pichon_BMIX80/BMIX.xml"
+        -> configs/FS25_Pichon_BMIX80/fillPoints.xml
 
   Optional "configFolder" attribute overrides where the bundled fillPoints.xml
   lives. Use this when a mod ships multiple XMLs in the same folder (the
   auto-derived bundled folder would collide), or when you want to organise
   bundled configs differently from the runtime path.
 
-  Example (UK Shed: two placeables share mods/FS25_UKStlyleBuilding/xml/):
-      <placeable path="mods/FS25_UKStlyleBuilding/xml/cowShedUK.xml"
+  Example (UK Shed: two placeables share FS25_UKStlyleBuilding/xml/):
+      <placeable path="FS25_UKStlyleBuilding/xml/cowShedUK.xml"
                  configFolder="mods/FS25_UKStlyleBuilding/xml/cowShedUK"/>
         -> configs/mods/FS25_UKStlyleBuilding/xml/cowShedUK/fillPoints.xml
 
   Vehicles or placeables that ship with an embedded <slurryPipeSystem> block
   inside their own XML do NOT need a manifest entry. The embedded block wins
   over any manifest entry, scoped to that vehicle instance only.
+  
+  NOTE: Mod entries use paths WITHOUT "mods/" prefix to support custom mods
+  folders. The configFolder attribute retains "mods/" to preserve bundled
+  config locations.
 ================================================================================
 -->
 
@@ -43,10 +47,11 @@
 		<vehicle path="data/vehicles/samsonAgro/pgII28Genesis/pgII28Genesis.xml"/>
 		<vehicle path="data/vehicles/zunhammer/ult18/ult18.xml"/>
 		<vehicle path="data/vehicles/zunhammer/ult24/ult24.xml"/>
-
+		<vehicle path="data/vehicles/farmtech/supercis800/supercis800.xml"/>
+		
         <!-- Mod vehicles -->
-        <vehicle path="mods/FS25_Joskin_Cobra/cobra.xml"/>
-        <vehicle path="mods/FS25_Pichon_BMIX80/BMIX.xml"/>
+        <vehicle path="FS25_Joskin_Cobra/cobra.xml"/>
+        <vehicle path="FS25_Pichon_BMIX80/BMIX.xml"/>
         
         <!-- PTOSlurryPump uses embedded <slurryPipeSystem>, no manifest entry needed -->
     </vehicleConfigs>
@@ -62,16 +67,22 @@
         <placeable path="data/placeables/rudolfHormann/cowBarnMedium/cowBarnMedium.xml"/>
         <placeable path="data/placeables/rudolfHormann/pigBarnBig/pigBarnBig.xml"/>
         <placeable path="data/placeables/rudolfHormann/pigBarnMedium/pigBarnMedium.xml"/>
+		
+		<placeable path="data/placeables/planET/bga99kw/bga99kw.xml"/>
+		<placeable path="data/placeables/planET/bga250kw/bga250kw.xml"/>
+		<placeable path="data/placeables/planET/bga500kw/bga500kw.xml"/>
 
         <!-- Mod placeables -->
-        <placeable path="mods/FS25_mrhLiquidManureTank/liquidManureTank.xml"
+        <placeable path="FS25_mrhLiquidManureTank/liquidManureTank.xml"
                    configFolder="mods/FS25_mrhLiquidManureTank/liquidManureTank"/>
-        <placeable path="mods/FS25_UKStlyleBuilding/xml/cowShedUK.xml"
+        <placeable path="FS25_UKStlyleBuilding/xml/cowShedUK.xml"
                    configFolder="mods/FS25_UKStlyleBuilding/xml/cowShedUK"/>
-        <placeable path="mods/FS25_UKStlyleBuilding/xml/cowShedUK_nonMilk.xml"
+        <placeable path="FS25_UKStlyleBuilding/xml/cowShedUK_nonMilk.xml"
                    configFolder="mods/FS25_UKStlyleBuilding/xml/cowShedUK_nonMilk"/>
-        <placeable path="mods/FS25_Witcombe/map/placeables/cowBarn01/cowBarn01.xml"/>
-        <placeable path="mods/FS25_Witcombe/map/placeables/cowBarnParlour/cowBarnParlour.xml"/>
+        <placeable path="FS25_Witcombe/map/placeables/cowBarn01/cowBarn01.xml"
+                   configFolder="mods/FS25_Witcombe/map/placeables/cowBarn01"/>
+        <placeable path="FS25_Witcombe/map/placeables/cowBarnParlour/cowBarnParlour.xml"
+                   configFolder="mods/FS25_Witcombe/map/placeables/cowBarnParlour"/>
     </placeableConfigs>
 
 </spsConfigManifest>

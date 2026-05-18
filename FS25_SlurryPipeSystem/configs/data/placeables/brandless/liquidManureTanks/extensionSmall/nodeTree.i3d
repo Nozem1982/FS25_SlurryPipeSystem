@@ -84,6 +84,8 @@
               <Shape name="slurryPit_screws" shapeId="4" clipDistance="300" nodeId="26" castsShadows="true" receiveShadows="true" materialIds="5"/>
               <Shape name="slurryPit_platform" shapeId="5" clipDistance="300" nodeId="27" castsShadows="true" receiveShadows="true" materialIds="8"/>
             </Shape>
+            <TransformGroup name="inNode" nodeId="31"/>
+            <TransformGroup name="outNode" rotation="0 180 0" nodeId="32"/>
           </TransformGroup>
           <TransformGroup name="slurryPlaneCentre" nodeId="28"/>
           <TransformGroup name="slurryPlaneEdge" translation="-9 0 0" nodeId="29"/>

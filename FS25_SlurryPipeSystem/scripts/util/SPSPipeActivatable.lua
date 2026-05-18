@@ -203,16 +203,16 @@ function SPSPipeActivatable:_getState()
         return nil
     else
         -- Connected
+        if coupling.isChainTerminus or coupling.isChainStart then
+            -- Chain terminus and chain start connections are internal junctions — no activatable when connected
+            return nil
+        end
         if coupling.valveFromRearControl then
             -- Valve is controlled from the rear node only — connect/disconnect here
             return "disconnectOnly"
         end
         if coupling.valveType == SPS_VALVE_TYPE_HYDRAULIC then
             -- Valve is cab-controlled — only allow disconnect, no valve prompts
-            return "disconnectOnly"
-        end
-        if coupling.isChainTerminus then
-            -- Chain terminus connections never have a manual valve — disconnect only
             return "disconnectOnly"
         end
         if coupling.valveOpen then

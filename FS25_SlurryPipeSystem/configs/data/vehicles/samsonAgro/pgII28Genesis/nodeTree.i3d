@@ -42,12 +42,16 @@
               <TransformGroup name="SPS_pipeCoupler01Arc01" translation="1.5 0 2.5" nodeId="23"/>
               <TransformGroup name="SPS_pipeCoupler01Arc02" translation="-1.5 0 2.5" nodeId="24"/>
             </TransformGroup>
+            <TransformGroup name="inNode" nodeId="43"/>
+            <TransformGroup name="outNode" rotation="0 180 0" nodeId="44"/>
           </TransformGroup>
           <TransformGroup name="SPS_pipeCoupler02" translation="-1.30453 -0.8927 3.22671" rotation="-180 90 -164.091" nodeId="25">
             <TransformGroup name="SPS_pipeCoupler02Arcs" translation="-7.26186e-08 0 0" rotation="164.091 0 -180" nodeId="26">
               <TransformGroup name="SPS_pipeCoupler02Arc01" translation="1.5 1.67697e-06 2.5" rotation="8.54233e-13 0 -1.16786e-05" nodeId="27"/>
               <TransformGroup name="SPS_pipeCoupler02Arc02" translation="-1.5 2.5034e-06 2.5" nodeId="28"/>
             </TransformGroup>
+            <TransformGroup name="inNode" translation="0.10047 -0.55168 2.30134" rotation="121.361 -1.91852e-07 180" nodeId="45"/>
+            <TransformGroup name="outNode" translation="0.10047 -0.55168 2.30134" rotation="58.6389 9.90793e-06 1.45688e-05" nodeId="46"/>
           </TransformGroup>
         </TransformGroup>
       </TransformGroup>

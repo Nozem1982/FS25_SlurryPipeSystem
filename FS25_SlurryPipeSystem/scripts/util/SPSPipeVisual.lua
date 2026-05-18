@@ -113,8 +113,7 @@ function SPSPipeVisual:createPipe(nodeA, nodeB, startConnectorType, endConnector
         bones[i] = boneNode
     end
 
-    print(string.format("[SPS SPPV] createPipe: OK — pipeRoot=%d bone1=%d bone16=%d bones=%d startFlip=%s endFlip=%s",
-        pipeRoot, bone1, bone16, #bones, tostring(startFlip), tostring(endFlip)))
+    -- Pipe created successfully (detailed node ID logging removed for cleaner logs)
 
     -- Start connector visibility: female01 (child 0) or male01 (child 1)
     local femaleStart = getChildAt(startConnectors, 0)
@@ -155,22 +154,12 @@ function SPSPipeVisual:createPipe(nodeA, nodeB, startConnectorType, endConnector
     -- Link pipeRoot to nodeA in local space — pipe start follows source coupler.
     link(nodeA, pipeRoot)
     setTranslation(pipeRoot, 0, 0, 0)
-    if startFlip then
-        setRotation(pipeRoot, 0, math.pi, 0)
-    else
-        setRotation(pipeRoot, 0, 0, 0)
-    end
+    setRotation(pipeRoot, 0, 0, 0)
 
     -- Link endConnectors to nodeB in local space — pipe end follows target coupler.
-    -- endFlip=true applies a local 180° Y rotation to compensate when nodeB
-    -- faces the same direction as the pipe (chain start case).
     link(nodeB, endConnectors)
     setTranslation(endConnectors, 0, 0, 0)
-    if endFlip then
-        setRotation(endConnectors, 0, math.pi, 0)
-    else
-        setRotation(endConnectors, 0, 0, 0)
-    end
+    setRotation(endConnectors, 0, 0, 0)
 
     self:updatePipe(inst)
     return inst
@@ -210,6 +199,7 @@ function SPSPipeVisual:updatePipe(inst)
     if span < 0.001 then return end
 
     local adx, ady, adz = localDirectionToWorld(nodeA, 0, 0, -1)
+    local bdx, bdy, bdz = localDirectionToWorld(nodeB, 0, 0, -1)
 
     local tension = span * SPSPipeVisual.TENSION_FACTOR
     local sag     = span * SPSPipeVisual.SAG_FACTOR
@@ -218,39 +208,11 @@ function SPSPipeVisual:updatePipe(inst)
     local p1y = p0y + ady * tension - sag
     local p1z = p0z + adz * tension
 
-    local p2dx = p0x - p3x
-    local p2dy = p0y - p3y
-    local p2dz = p0z - p3z
-    local p2dlen = math.sqrt(p2dx*p2dx + p2dy*p2dy + p2dz*p2dz)
-    if p2dlen > 0.001 then p2dx=p2dx/p2dlen p2dy=p2dy/p2dlen p2dz=p2dz/p2dlen end
-    local p2x = p3x + p2dx * tension
-    local p2y = p3y + p2dy * tension - sag
-    local p2z = p3z + p2dz * tension
+    local p2x = p3x - bdx * tension
+    local p2y = p3y - bdy * tension - sag
+    local p2z = p3z - bdz * tension
 
-    if not inst._hasLogged then
-        inst._hasLogged = true
-        print(string.format("[SPS SPPV] updatePipe: nodeA pos=(%.3f,%.3f,%.3f) rot=(%.3f,%.3f,%.3f)", ax,ay,az,arx,ary,arz))
-        print(string.format("[SPS SPPV] updatePipe: nodeB pos=(%.3f,%.3f,%.3f) rot=(%.3f,%.3f,%.3f)", bx,by,bz,brx,bry,brz))
-        print(string.format("[SPS SPPV] updatePipe: Bone1 P0=(%.3f,%.3f,%.3f) Bone16 P3=(%.3f,%.3f,%.3f)", p0x,p0y,p0z,p3x,p3y,p3z))
-        print(string.format("[SPS SPPV] updatePipe: span=%.4f tension=%.4f sag=%.4f", span,tension,sag))
-        print(string.format("[SPS SPPV] updatePipe: P1=(%.3f,%.3f,%.3f) P2=(%.3f,%.3f,%.3f)", p1x,p1y,p1z,p2x,p2y,p2z))
-        print(string.format("[SPS SPPV] updatePipe: nodeA dir=(%.3f,%.3f,%.3f)", adx,ady,adz))
-        for i = 1, SPSPipeVisual.NUM_INTERIOR_BONES do
-            local t  = i / (SPSPipeVisual.NUM_INTERIOR_BONES + 1)
-            local mt = 1 - t
-            local px = mt^3*p0x + 3*mt^2*t*p1x + 3*mt*t^2*p2x + t^3*p3x
-            local py = mt^3*p0y + 3*mt^2*t*p1y + 3*mt*t^2*p2y + t^3*p3y
-            local pz = mt^3*p0z + 3*mt^2*t*p1z + 3*mt*t^2*p2z + t^3*p3z
-            local tdx = 3*mt^2*(p1x-p0x) + 6*mt*t*(p2x-p1x) + 3*t^2*(p3x-p2x)
-            local tdy = 3*mt^2*(p1y-p0y) + 6*mt*t*(p2y-p1y) + 3*t^2*(p3y-p2y)
-            local tdz = 3*mt^2*(p1z-p0z) + 6*mt*t*(p2z-p1z) + 3*t^2*(p3z-p2z)
-            local tlen = math.sqrt(tdx*tdx+tdy*tdy+tdz*tdz)
-            if tlen > 0.0001 then tdx=tdx/tlen tdy=tdy/tlen tdz=tdz/tlen end
-            local ry = math.atan2(-tdx,-tdz)
-            local rx = math.atan2(tdy, math.sqrt(tdx*tdx+tdz*tdz))
-            print(string.format("[SPS SPPV] bone[%02d] t=%.3f pos=(%.3f,%.3f,%.3f) rx=%.3f ry=%.3f", i,t,px,py,pz,rx,ry))
-        end
-    end
+    -- Bezier bone calculation (detailed logging removed for cleaner logs)
 
     local NUM   = SPSPipeVisual.NUM_INTERIOR_BONES
     local TOTAL = NUM + 1
@@ -275,6 +237,15 @@ function SPSPipeVisual:updatePipe(inst)
             tdx = tdx / tlen
             tdy = tdy / tlen
             tdz = tdz / tlen
+        end
+
+        -- Terrain clamp: lift bone if below terrain + pipe radius offset
+        if g_currentMission ~= nil and g_currentMission.terrainRootNode ~= nil then
+            local ty = getTerrainHeightAtWorldPos(g_currentMission.terrainRootNode, px, 0, pz)
+            local minY = ty + SPSPipeVisual.SAG_FACTOR
+            if py < minY then
+                py = minY
+            end
         end
 
         local ry = math.atan2(-tdx, -tdz)

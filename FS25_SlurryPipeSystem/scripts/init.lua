@@ -247,7 +247,7 @@ function SPSMod:loadMap(filename)
         -- Bought/saved placeables
         local placeables = ps.placeables or {}
         for _, placeable in ipairs(placeables) do
-            if placeable ~= nil and (placeable.spec_silo ~= nil or placeable.spec_husbandry ~= nil or placeable.spec_siloExtension ~= nil) then
+            if placeable ~= nil and (placeable.spec_silo ~= nil or placeable.spec_husbandry ~= nil or placeable.spec_siloExtension ~= nil or placeable.spec_productionPoint ~= nil) then
                 g_slurryPipeManager:registerPlaceable(placeable)
             end
         end
@@ -255,7 +255,7 @@ function SPSMod:loadMap(filename)
         if ps.uniqueIdToReplacedPlaceableData ~= nil then
             for _, data in pairs(ps.uniqueIdToReplacedPlaceableData) do
                 local placeable = data.placeable
-                if placeable ~= nil and (placeable.spec_silo ~= nil or placeable.spec_husbandry ~= nil or placeable.spec_siloExtension ~= nil) then
+                if placeable ~= nil and (placeable.spec_silo ~= nil or placeable.spec_husbandry ~= nil or placeable.spec_siloExtension ~= nil or placeable.spec_productionPoint ~= nil) then
                     g_slurryPipeManager:registerPlaceable(placeable)
                 end
             end
@@ -581,7 +581,7 @@ function Placeable:finalizePlacement()
     if origPlaceableFinalize ~= nil then
         origPlaceableFinalize(self)
     end
-    if g_slurryPipeManager ~= nil and (self.spec_silo ~= nil or self.spec_husbandry ~= nil or self.spec_siloExtension ~= nil) then
+    if g_slurryPipeManager ~= nil and (self.spec_silo ~= nil or self.spec_husbandry ~= nil or self.spec_siloExtension ~= nil or self.spec_productionPoint ~= nil) then
         -- Avoid double-registration for placeables already registered in loadMap
         if g_slurryPipeManager:getPlaceableEntry(self) == nil then
             g_slurryPipeManager:registerPlaceable(self)
@@ -591,7 +591,7 @@ end
 
 local origPlaceableDelete = Placeable.delete
 function Placeable:delete(immediate)
-    if g_slurryPipeManager ~= nil and (self.spec_silo ~= nil or self.spec_husbandry ~= nil or self.spec_siloExtension ~= nil) then
+    if g_slurryPipeManager ~= nil and (self.spec_silo ~= nil or self.spec_husbandry ~= nil or self.spec_siloExtension ~= nil or self.spec_productionPoint ~= nil) then
         g_slurryPipeManager:unregisterPlaceable(self)
     end
     if origPlaceableDelete ~= nil then

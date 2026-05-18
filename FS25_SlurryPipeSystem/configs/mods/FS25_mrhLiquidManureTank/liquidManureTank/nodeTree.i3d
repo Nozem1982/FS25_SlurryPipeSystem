@@ -92,6 +92,8 @@
                 </Shape>
               </TransformGroup>
             </Shape>
+            <TransformGroup name="inNode" nodeId="57"/>
+            <TransformGroup name="outNode" rotation="0 180 0" nodeId="58"/>
           </TransformGroup>
           <TransformGroup name="SPS_pipeCoupler02" translation="-8.195 0.945006 5.40144" rotation="163.755 59.0485 -180" nodeId="36">
             <TransformGroup name="SPS_pipeCoupler01Arcs" rotation="167.434 1.82134e-05 -180" nodeId="37">
@@ -113,6 +115,8 @@
                 </Shape>
               </TransformGroup>
             </Shape>
+            <TransformGroup name="inNode" translation="0.829594 5.53131e-05 -0.000190258" rotation="1.70755e-06 -1.70755e-06 1.28066e-06" nodeId="59"/>
+            <TransformGroup name="outNode" translation="0.829594 5.53131e-05 -0.000190258" rotation="180 -1.70755e-05 -180" nodeId="60"/>
           </TransformGroup>
           <TransformGroup name="slurryPlaneCentre" nodeId="49"/>
           <TransformGroup name="slurryPlaneEdge" translation="-8.58787 0 0" nodeId="50"/>

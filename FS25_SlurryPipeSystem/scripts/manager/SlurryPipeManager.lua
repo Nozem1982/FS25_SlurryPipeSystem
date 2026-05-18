@@ -638,9 +638,22 @@ function SlurryPipeManager:registerVehicle(vehicle)
 
         local mountNode = findLinkedNode(xmlFile:getString(cKey .. "#mountNodeName"))
         if mountNode ~= nil then
+            -- Find inNode and outNode children of the mountNode
+            local inNode, outNode
+            for i = 0, getNumOfChildren(mountNode) - 1 do
+                local child = getChildAt(mountNode, i)
+                local childName = getName(child)
+                if childName == "inNode" then
+                    inNode = child
+                elseif childName == "outNode" then
+                    outNode = child
+                end
+            end
             local couplingEntry = {
                 id                  = couplingId,
                 mountNode           = mountNode,
+                inNode              = inNode,
+                outNode             = outNode,
                 valveType           = xmlFile:getString(cKey .. "#valveType", SPS_VALVE_TYPE_MANUAL),
                 flowDirection       = xmlFile:getString(cKey .. "#flowDirection", "BOTH"),
                 maxPipeLength       = xmlFile:getFloat(cKey .. "#maxPipeLength", 6.0),
@@ -1100,14 +1113,19 @@ function SlurryPipeManager:registerPlaceable(placeable)
     local sourceEntry = nil
     if fillPlaneNode ~= nil and (placeable.spec_silo ~= nil or placeable.spec_husbandry ~= nil or placeable.spec_siloExtension ~= nil) then
         sourceEntry = SlurryNodeUtil.buildStoragePlaneSource(placeable, fillPlaneNode, minY, maxY, fillType, planeBounds)
-    elseif fillPlaneNode == nil and placeable.spec_husbandry ~= nil then
-        -- No fill plane authored — husbandry placeable with coupling-only access.
+    elseif fillPlaneNode == nil and (placeable.spec_husbandry ~= nil or placeable.spec_productionPoint ~= nil) then
+        -- No fill plane authored — husbandry/production point placeable with coupling-only access.
         -- Build a minimal sourceEntry so coupling flow can read/write the storage
         -- even though arm surface detection is not possible.
         local storage = nil
         local sh = placeable.spec_husbandry
-        if sh.storage ~= nil and type(sh.storage.getFillLevel) == "function" then
+        if sh ~= nil and sh.storage ~= nil and type(sh.storage.getFillLevel) == "function" then
             storage = sh.storage
+        end
+        if storage == nil and placeable.spec_productionPoint ~= nil
+        and placeable.spec_productionPoint.productionPoint ~= nil
+        and placeable.spec_productionPoint.productionPoint.storage ~= nil then
+            storage = placeable.spec_productionPoint.productionPoint.storage
         end
         if storage ~= nil then
             sourceEntry = {
@@ -1121,9 +1139,9 @@ function SlurryPipeManager:registerPlaceable(placeable)
                 planeBounds = nil,
                 debugLabel = tostring(placeable.configFileName):match("([^/]+)%.xml$") or "placeable",
             }
-            SlurryDebug.log("registerPlaceable: husbandry coupling-only sourceEntry for " .. tostring(placeable.configFileName))
+            SlurryDebug.log("registerPlaceable: coupling-only sourceEntry for " .. tostring(placeable.configFileName))
         else
-            SlurryDebug.log("registerPlaceable: no storage found for husbandry placeable " .. tostring(placeable.configFileName))
+            SlurryDebug.log("registerPlaceable: no storage found for coupling-only placeable " .. tostring(placeable.configFileName))
         end
     end
     if sourceEntry ~= nil then
@@ -1214,6 +1232,8 @@ function SlurryPipeManager:registerPlaceable(placeable)
                 id                       = couplingId,
                 mountNode                = mountNode,
                 arcNode                  = arcNode,
+                inNode                   = nil,
+                outNode                  = nil,
                 valveType                = xmlFile:getString(cKey .. "#valveType", SPS_VALVE_TYPE_MANUAL),
                 flowDirection            = xmlFile:getString(cKey .. "#flowDirection", "BOTH"),
                 connectorType            = xmlFile:getString(cKey .. "#connector", "female"),
@@ -1233,6 +1253,16 @@ function SlurryPipeManager:registerPlaceable(placeable)
                 effectPlaying            = false,
                 undeployedVisibleNodes   = undeployedVisibleNodes,
             }
+            -- Find inNode and outNode children of the mountNode
+            for i = 0, getNumOfChildren(mountNode) - 1 do
+                local child = getChildAt(mountNode, i)
+                local childName = getName(child)
+                if childName == "inNode" then
+                    sc.inNode = child
+                elseif childName == "outNode" then
+                    sc.outNode = child
+                end
+            end
             -- Bind coupler animations if either id is declared on this coupling.
             if SPSCouplerAnimator ~= nil
             and (sc.connectorAnimationId ~= nil or sc.valveAnimationId ~= nil) then
@@ -2564,6 +2594,72 @@ end
 
 -- Returns the first coupling whose arc overlaps with the given coupling.
 -- Checks both vehicle couplings and placeable store couplings.
+-- ---------------------------------------------------------------------------
+-- Check if any coupling exists within specified distance (simple presence check)
+-- Used for extended zone checks when starting chain laying
+-- ---------------------------------------------------------------------------
+function SlurryPipeManager:hasNearbyCoupling(coupling, maxDistance)
+    if coupling == nil then return false end
+    
+    local apexA = coupling.mountNode
+    if apexA == nil or not entityExists(apexA) then return false end
+    
+    local ax, ay, az = getWorldTranslation(apexA)
+    
+    -- Check vehicle couplings
+    for _, vEntry in ipairs(self.registeredVehicles) do
+        for _, vc in ipairs(vEntry.couplingEntries) do
+            if vc ~= coupling then
+                local apexB = vc.mountNode
+                if apexB ~= nil and entityExists(apexB) then
+                    local bx, by, bz = getWorldTranslation(apexB)
+                    local dist = MathUtil.vector3Length(ax-bx, ay-by, az-bz)
+                    if dist <= maxDistance then
+                        return true
+                    end
+                end
+            end
+        end
+    end
+    
+    -- Check placeable couplings
+    for _, pEntry in ipairs(self.registeredPlaceables) do
+        if pEntry.storeCouplings ~= nil then
+            for _, sc in ipairs(pEntry.storeCouplings) do
+                if sc ~= coupling and (coupling.placeable == nil or sc.placeable ~= coupling.placeable) then
+                    local apexB = sc.mountNode
+                    if apexB ~= nil and entityExists(apexB) then
+                        local bx, by, bz = getWorldTranslation(apexB)
+                        local dist = MathUtil.vector3Length(ax-bx, ay-by, az-bz)
+                        if dist <= maxDistance then
+                            return true
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    -- Check chain terminus couplings
+    for _, ct in ipairs(self.chainTerminusEntries) do
+        if ct ~= coupling then
+            local apexB = ct.mountNode
+            if apexB ~= nil and entityExists(apexB) then
+                local bx, by, bz = getWorldTranslation(apexB)
+                local dist = MathUtil.vector3Length(ax-bx, ay-by, az-bz)
+                if dist <= maxDistance then
+                    return true
+                end
+            end
+        end
+    end
+    
+    return false
+end
+
+-- ---------------------------------------------------------------------------
+-- Find first overlapping coupling within connection distance
+-- ---------------------------------------------------------------------------
 function SlurryPipeManager:findOverlappingCoupler(coupling)
     -- Already connected — no new connection possible
     if coupling.isConnected then return nil end
@@ -2575,12 +2671,22 @@ function SlurryPipeManager:findOverlappingCoupler(coupling)
     for _, vEntry in ipairs(self.registeredVehicles) do
         for _, vc in ipairs(vEntry.couplingEntries) do
             if vc ~= coupling and not vc.isConnected then
-                local apexB, arc1B, arc2B = self:_getCouplingArcNodes(vc)
-                if apexB ~= nil and entityExists(apexB) then
-                    local bx, by, bz = getWorldTranslation(apexB)
-                    if MathUtil.vector3Length(apexAx-bx, apexAy-by, apexAz-bz) <= SPS_MAX_CONNECT_DIST then
-                        if self:_arcsOverlap(apexA, arc1A, arc2A, apexB, arc1B, arc2B) then
-                            return vc
+                -- Skip if this coupling is a chain anchor with active segments
+                local hasChain = false
+                for _, chain in ipairs(self.pipeChains) do
+                    if chain.anchorCoupling == vc and #chain.segments > 0 then
+                        hasChain = true
+                        break
+                    end
+                end
+                if not hasChain then
+                    local apexB, arc1B, arc2B = self:_getCouplingArcNodes(vc)
+                    if apexB ~= nil and entityExists(apexB) then
+                        local bx, by, bz = getWorldTranslation(apexB)
+                        if MathUtil.vector3Length(apexAx-bx, apexAy-by, apexAz-bz) <= SPS_MAX_CONNECT_DIST then
+                            if self:_arcsOverlap(apexA, arc1A, arc2A, apexB, arc1B, arc2B) then
+                                return vc
+                            end
                         end
                     end
                 end
@@ -2595,12 +2701,22 @@ function SlurryPipeManager:findOverlappingCoupler(coupling)
                 and (coupling.placeable == nil or sc.placeable ~= coupling.placeable)
                 and not sc.isConnected
                 and (not sc.deployable or sc.isDeployed) then
-                    local apexB, arc1B, arc2B = self:_getCouplingArcNodes(sc)
-                    if apexB ~= nil and entityExists(apexB) then
-                        local bx, by, bz = getWorldTranslation(apexB)
-                        if MathUtil.vector3Length(apexAx-bx, apexAy-by, apexAz-bz) <= SPS_MAX_CONNECT_DIST then
-                            if self:_arcsOverlap(apexA, arc1A, arc2A, apexB, arc1B, arc2B) then
-                                return sc
+                    -- Skip if this coupling is a chain anchor with active segments
+                    local hasChain = false
+                    for _, chain in ipairs(self.pipeChains) do
+                        if chain.anchorCoupling == sc and #chain.segments > 0 then
+                            hasChain = true
+                            break
+                        end
+                    end
+                    if not hasChain then
+                        local apexB, arc1B, arc2B = self:_getCouplingArcNodes(sc)
+                        if apexB ~= nil and entityExists(apexB) then
+                            local bx, by, bz = getWorldTranslation(apexB)
+                            if MathUtil.vector3Length(apexAx-bx, apexAy-by, apexAz-bz) <= SPS_MAX_CONNECT_DIST then
+                                if self:_arcsOverlap(apexA, arc1A, arc2A, apexB, arc1B, arc2B) then
+                                    return sc
+                                end
                             end
                         end
                     end
@@ -2706,6 +2822,16 @@ function SlurryPipeManager:onCouplerConnect(vehicle, coupling)
         return
     end
 
+    -- Both couplers must be free to connect
+    if coupling.isConnected then
+        print("[SPS] onCouplerConnect: source coupling already connected")
+        return
+    end
+    if otherCoupling.isConnected then
+        print("[SPS] onCouplerConnect: target coupling already connected")
+        return
+    end
+
     -- Determine owners — vehicle is nil when coupling is on a placeable
     local ownerA = vehicle or coupling.placeable
     local targetVehicle, targetPlaceable = self:_findCouplingOwner(otherCoupling)
@@ -2755,30 +2881,48 @@ function SlurryPipeManager:applyConnectCouplings(couplingA, couplingB, ownerA, o
     reAnchorIfNeeded(couplingB, couplingA)
 
     if g_spsPipeVisual ~= nil and g_spsPipeVisual:isReady() then
-        local nodeA = couplingA.mountNode
-        local nodeB = couplingB.mountNode
-        if couplingA.isChainTerminus and couplingA.chain ~= nil and not couplingA.isChainStart then
-            local segs = couplingA.chain.segments
+        -- Determine which coupling is the lead (start of bez pipe).
+        -- Default: couplingA is lead unless couplingB is a chain terminus.
+        -- Chain terminus connections: chain terminus is always the lead.
+        local leadCoupling, followCoupling = couplingA, couplingB
+        local swapped = false
+        
+        -- If B is a chain terminus (not chain start), swap so chain is lead
+        if couplingB.isChainTerminus and not couplingB.isChainStart then
+            leadCoupling, followCoupling = couplingB, couplingA
+            swapped = true
+        end
+        
+        -- Determine connection nodes: lead uses inNode, follow uses outNode
+        local nodeA = leadCoupling.inNode or leadCoupling.mountNode
+        local nodeB = followCoupling.outNode or followCoupling.mountNode
+        
+        -- Chain segment overrides
+        if leadCoupling.isChainTerminus and leadCoupling.chain ~= nil and not leadCoupling.isChainStart then
+            local segs = leadCoupling.chain.segments
             if #segs > 0 then nodeA = segs[#segs].endConnectors end
-        elseif couplingB.isChainTerminus and couplingB.chain ~= nil and not couplingB.isChainStart then
-            local segs = couplingB.chain.segments
-            if #segs > 0 then nodeB = segs[#segs].endConnectors end
-        elseif couplingB.isChainStart and couplingB.chain ~= nil then
-            local segs = couplingB.chain.segments
-            if #segs > 0 then nodeB = segs[1].pipeRoot end
-        elseif couplingA.isChainStart and couplingA.chain ~= nil then
-            local segs = couplingA.chain.segments
+        elseif leadCoupling.isChainStart and leadCoupling.chain ~= nil then
+            local segs = leadCoupling.chain.segments
             if #segs > 0 then nodeA = segs[1].pipeRoot end
         end
-        local startConnType = (couplingA.connectorType ~= nil) and couplingA.connectorType or "male"
-        local endConnType   = (couplingB.connectorType ~= nil) and couplingB.connectorType or "female"
-        local startFlip     = (couplingA.isChainTerminus == true) or (couplingA.placeable ~= nil)
-        local endFlip       = (couplingB.isChainTerminus == true) or (couplingB.placeable ~= nil)
-        print(string.format("[SPS] applyConnectCouplings: startFlip=%s endFlip=%s A.isChainTerminus=%s B.isChainTerminus=%s A.isChainStart=%s B.isChainStart=%s",
-            tostring(startFlip), tostring(endFlip),
-            tostring(couplingA.isChainTerminus), tostring(couplingB.isChainTerminus),
-            tostring(couplingA.isChainStart),    tostring(couplingB.isChainStart)))
-        local inst = g_spsPipeVisual:createPipe(nodeA, nodeB, startConnType, endConnType, endFlip, startFlip)
+        
+        if followCoupling.isChainTerminus and followCoupling.chain ~= nil and not followCoupling.isChainStart then
+            local segs = followCoupling.chain.segments
+            if #segs > 0 then nodeB = segs[#segs].endConnectors end
+        elseif followCoupling.isChainStart and followCoupling.chain ~= nil then
+            local segs = followCoupling.chain.segments
+            if #segs > 0 then nodeB = segs[1].pipeRoot end
+        end
+        
+        local startConnType = (leadCoupling.connectorType ~= nil) and leadCoupling.connectorType or "male"
+        local endConnType   = (followCoupling.connectorType ~= nil) and followCoupling.connectorType or "female"
+        
+        print(string.format("[SPS] applyConnectCouplings: swapped=%s lead.isChainTerminus=%s follow.isChainTerminus=%s lead.isChainStart=%s follow.isChainStart=%s",
+            tostring(swapped),
+            tostring(leadCoupling.isChainTerminus), tostring(followCoupling.isChainTerminus),
+            tostring(leadCoupling.isChainStart),    tostring(followCoupling.isChainStart)))
+        
+        local inst = g_spsPipeVisual:createPipe(nodeA, nodeB, startConnType, endConnType, false, false)
         if inst ~= nil then
             local pipeId = self._nextPipeId
             self._nextPipeId = self._nextPipeId + 1
@@ -2786,23 +2930,19 @@ function SlurryPipeManager:applyConnectCouplings(couplingA, couplingB, ownerA, o
             local cg = self.currentPipeColor.g
             local cb = self.currentPipeColor.b
             g_spsPipeVisual:applyColor(inst, cr, cg, cb)
-            -- Bez pipe end connector visibility:
-            -- Chain start (detNode04) = female receiver -> connectorEnd shows female02 (child 0)
-            -- Chain far end (terminus) = female -> bez meets it with male -> connectorEnd shows male02 (child 1)
-            -- Chain start as connectorStart: show female01 (chain start is female)
-            if couplingB.isChainStart and inst.endConnectors ~= nil then
+            -- Bez pipe end connector visibility based on lead/follow
+            if followCoupling.isChainStart and inst.endConnectors ~= nil then
                 inst.connectorEndFlipped = true
                 local femaleConn = getChildAt(inst.endConnectors, 0)
                 local maleConn   = getChildAt(inst.endConnectors, 1)
                 if femaleConn ~= nil and femaleConn ~= 0 then setVisibility(femaleConn, true) end
                 if maleConn   ~= nil and maleConn   ~= 0 then setVisibility(maleConn, false) end
-            elseif couplingB.isChainTerminus and not couplingB.isChainStart and inst.endConnectors ~= nil then
-                -- Chain far end is female — bez end connecting to it uses male02
+            elseif followCoupling.isChainTerminus and not followCoupling.isChainStart and inst.endConnectors ~= nil then
                 local femaleConn = getChildAt(inst.endConnectors, 0)
                 local maleConn   = getChildAt(inst.endConnectors, 1)
                 if femaleConn ~= nil and femaleConn ~= 0 then setVisibility(femaleConn, false) end
                 if maleConn   ~= nil and maleConn   ~= 0 then setVisibility(maleConn, true) end
-            elseif couplingA.isChainStart and inst.startConnectors ~= nil then
+            elseif leadCoupling.isChainStart and inst.startConnectors ~= nil then
                 local femaleConn = getChildAt(inst.startConnectors, 0)
                 local maleConn   = getChildAt(inst.startConnectors, 1)
                 if femaleConn ~= nil and femaleConn ~= 0 then setVisibility(femaleConn, true) end

@@ -34,6 +34,8 @@
               <TransformGroup name="SPS_pipeCoupler01Arc01" translation="1.5 0 2.5" nodeId="18"/>
               <TransformGroup name="SPS_pipeCoupler01Arc02" translation="-1.5 0 2.5" nodeId="19"/>
             </TransformGroup>
+            <TransformGroup name="inNode" nodeId="25"/>
+            <TransformGroup name="outNode" rotation="0 180 0" nodeId="26"/>
           </TransformGroup>
         </TransformGroup>
       </TransformGroup>

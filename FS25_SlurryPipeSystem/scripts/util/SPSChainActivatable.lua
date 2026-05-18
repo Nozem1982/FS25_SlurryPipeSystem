@@ -46,8 +46,10 @@ function SPSChainActivatable:getIsActivatable()
     if dist > radius then return false end
     -- Anchor: hide when another coupling arc overlaps (SPSPipeActivatable handles connect)
     -- Skip this when a live pipe is being walked — finalisePipe must show regardless
+    -- Skip this when chain has segments — removal must show even if arcs overlap
     local isLaying = self.chain ~= nil and self.chain.liveSegment ~= nil
-    if self.arcIndex == 0 and self.coupling ~= nil and g_slurryPipeManager ~= nil and not isLaying then
+    local hasSegments = self.chain ~= nil and #self.chain.segments > 0
+    if self.arcIndex == 0 and self.coupling ~= nil and g_slurryPipeManager ~= nil and not isLaying and not hasSegments then
         if g_slurryPipeManager:findOverlappingCoupler(self.coupling) ~= nil then return false end
     end
     -- Terminus: hide when live pipe is being walked
@@ -350,6 +352,14 @@ function SPSChainActivatable:_getState()
             if self.coupling.deployable and self.coupling.isDeployed then
                 return "deployedCoupling"
             end
+            
+            -- Vehicle couplings: extended 5.5m zone check before allowing lay first pipe
+            if self.coupling ~= nil and self.coupling.placeable == nil and g_slurryPipeManager ~= nil then
+                if g_slurryPipeManager:hasNearbyCoupling(self.coupling, 5.5) then
+                    return nil  -- Block: another coupling within 5.5m
+                end
+            end
+            
             return "layFirstPipe"
         end
         -- Live pipe being walked: offer finalise (short) or cancel (long press)
@@ -358,6 +368,13 @@ function SPSChainActivatable:_getState()
         end
         -- No live pipe, no segments, no DS
         if #self.chain.segments == 0 and self.chain.dockingStation == nil then
+            -- Vehicle couplings: extended 5.5m zone check before allowing lay first pipe
+            if self.coupling ~= nil and self.coupling.placeable == nil and g_slurryPipeManager ~= nil then
+                if g_slurryPipeManager:hasNearbyCoupling(self.coupling, 5.5) then
+                    return nil  -- Block: another coupling within 5.5m
+                end
+            end
+            
             return "layFirstPipe"
         end
         -- Segments exist and no live pipe: remove is at the chain start, not here
