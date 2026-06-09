@@ -8,7 +8,7 @@
 local SPS_MOD_DIRECTORY = g_currentModDirectory
 local SPS_MOD_NAME      = "FS25_SlurryPipeSystem"
 
-SlurryDebug.enabled = true  -- hardcoded during development
+SlurryDebug.enabled = false  -- hardcoded during development
 
 source(SPS_MOD_DIRECTORY .. "scripts/settings/SPSSettingsMenuExtension.lua")
 source(SPS_MOD_DIRECTORY .. "scripts/util/SPSConduitHUDExtension.lua")
@@ -121,8 +121,28 @@ local function registerOverrides()
                 SlurryPipeSystemOverride.getIsWorkAreaActiveSelf
             )
 
-
             count = count + 1
+        end
+        -- -------------------------------------------------------------------
+        -- Sprayer types (sprayer / selfPropelledSprayer) — block vanilla
+        -- R and I in the cab. Mirrors the manureBarrel block above.
+        -- -------------------------------------------------------------------
+        if baseName == "sprayer" or baseName == "selfPropelledSprayer" then
+            SpecializationUtil.registerOverwrittenFunction(
+                typeEntry,
+                "getCanToggleDischargeToGround",
+                SlurryPipeSystemOverride.getCanToggleDischargeToGround
+            )
+            SpecializationUtil.registerOverwrittenFunction(
+                typeEntry,
+                "getCanToggleDischargeToObject",
+                SlurryPipeSystemOverride.getCanToggleDischargeToObject
+            )
+            SpecializationUtil.registerOverwrittenFunction(
+                typeEntry,
+                "getAllowLoadTriggerActivation",
+                SlurryPipeSystemOverride.getAllowLoadTriggerActivation
+            )
         end
         -- Register getCanBeTurnedOn and getCanToggleTurnedOn on ALL types that have
         -- the turnOnVehicle spec — this prevents fold state or spreader state from
@@ -132,9 +152,13 @@ local function registerOverrides()
         if typeEntry.specializations ~= nil then
             local hasTurnOn = false
             local hasDischargeable = false
+            local hasFillUnit = false
+            local hasSprayer = false
             for _, spec in ipairs(typeEntry.specializations) do
                 if spec.className == "TurnOnVehicle" then hasTurnOn = true end
                 if spec.className == "Dischargeable" then hasDischargeable = true end
+                if spec.className == "FillUnit" then hasFillUnit = true end
+                if spec.className == "Sprayer" then hasSprayer = true end
             end
             if hasTurnOn then
                 SpecializationUtil.registerOverwrittenFunction(
@@ -146,6 +170,23 @@ local function registerOverrides()
                     typeEntry,
                     "getCanToggleTurnedOn",
                     SlurryPipeSystemOverride.getCanToggleTurnedOn
+                )
+                -- Keep the (activatable) slurry fill unit active while pressure-driven
+                -- discharge is in progress so an attached spreader implement can keep
+                -- drawing slurry after the pump/PTO is switched off (taper instead of
+                -- stop). Registered on ALL turnOn source types — covers both the
+                -- manureBarrel tanker (Samson) and self-propelled sources (Oxbo).
+                SpecializationUtil.registerOverwrittenFunction(
+                    typeEntry,
+                    "getIsFillUnitActive",
+                    SlurryPipeSystemOverride.getIsFillUnitActive
+                )
+                -- Block the vanilla turn-on driver from playing the SPS-managed
+                -- spreader animation; SPS drives it from discharge instead.
+                SpecializationUtil.registerOverwrittenFunction(
+                    typeEntry,
+                    "getIsTurnedOnAnimationActive",
+                    SlurryPipeSystemOverride.getIsTurnedOnAnimationActive
                 )
             end
             -- For non-tanker types with dischargeable: gate discharge on SPS spreaderValveOpen
@@ -166,6 +207,39 @@ local function registerOverrides()
                     typeEntry,
                     "getIsWorkAreaActive",
                     SlurryPipeSystemOverride.getIsWorkAreaActiveAttached
+                )
+            end
+            -- For any type with a fill unit: append stored SPS pressure to the
+            -- fill-levels HUD bar (after the fill type name, e.g. "(+1.2 Bar)").
+            -- The override self-guards on isRegistered + getPressureInfoText, so it
+            -- is a no-op for non-SPS vehicles and unregistered states.
+            if hasFillUnit then
+                SpecializationUtil.registerOverwrittenFunction(
+                    typeEntry,
+                    "getFillLevelInformation",
+                    SlurryPipeSystemOverride.getFillLevelInformation
+                )
+            end
+            -- For any spreader (Sprayer spec): hold the implement's working-speed
+            -- limit while the SPS spreader valve is open, so turning the PTO off at
+            -- the headland (which releases the vanilla turnOn-gated speed cap) does
+            -- not let the vehicle speed up while stored pressure is still spreading.
+            -- The override self-guards on SPS state, so it is a no-op otherwise.
+            if hasSprayer then
+                SpecializationUtil.registerOverwrittenFunction(
+                    typeEntry,
+                    "doCheckSpeedLimit",
+                    SlurryPipeSystemOverride.doCheckSpeedLimit
+                )
+                SpecializationUtil.registerOverwrittenFunction(
+                    typeEntry,
+                    "getRawSpeedLimit",
+                    SlurryPipeSystemOverride.getRawSpeedLimit
+                )
+                SpecializationUtil.registerOverwrittenFunction(
+                    typeEntry,
+                    "getSprayerUsage",
+                    SlurryPipeSystemOverride.getSprayerUsage
                 )
             end
         end
@@ -215,18 +289,26 @@ function SPSMod:loadMap(filename)
     g_spsPipeVisual = SPSPipeVisual.new(SPS_MOD_DIRECTORY)
     g_spsPipeVisual:load()
 
-    -- Load SPS pipe effect material holder — provides "pipe" material via MaterialUtil.onCreateBaseMaterial
+    -- Load SPS pipe effect material holder — provides "pipe" (slurry) and "spsWaterPipe" (water) materials.
+    -- Scene order: child 0 = unload_materialHolder, child 1 = unloadSmoke_materialHolder,
+    --              child 2 = unloadPipe_materialHolder (slurry), child 3 = unloadWaterPipe_materialHolder (water)
     g_spsSlurryMaterial     = nil
     g_spsSlurryMaterialNode = nil
+    g_spsWaterMaterial      = nil
     local matHolderPath = SPS_MOD_DIRECTORY .. "i3d/materials/unloadMeshes_materialHolder.i3d"
     local matNode = loadI3DFile(matHolderPath)
     if matNode ~= nil and matNode ~= 0 then
-        -- Scene order: child 0 = unload_materialHolder, child 1 = unloadSmoke_materialHolder, child 2 = unloadPipe_materialHolder
         local pipeMatShape  = getChildAt(matNode, 2)
         if pipeMatShape ~= nil and pipeMatShape ~= 0 then
             g_spsSlurryMaterial = getMaterial(pipeMatShape, 0)
         else
             print("[SPS INIT] WARNING: unloadPipe_materialHolder shape not found at child index 2")
+        end
+        local waterMatShape = getChildAt(matNode, 3)
+        if waterMatShape ~= nil and waterMatShape ~= 0 then
+            g_spsWaterMaterial = getMaterial(waterMatShape, 0)
+        else
+            print("[SPS INIT] WARNING: unloadWaterPipe_materialHolder shape not found at child index 3")
         end
         link(getRootNode(), matNode)
         setVisibility(matNode, false)
@@ -239,6 +321,19 @@ function SPSMod:loadMap(filename)
     g_slurryPipeManager:loadPipeColors(SPS_MOD_DIRECTORY)
     g_slurryPipeManager:loadVehicleConfigs(SPS_MOD_DIRECTORY)
     g_slurryPipeManager:loadPlaceableConfigs(SPS_MOD_DIRECTORY)
+    g_slurryPipeManager:loadSprayerVehicleConfigs(SPS_MOD_DIRECTORY)
+    g_slurryPipeManager:loadSprayerPlaceableConfigs(SPS_MOD_DIRECTORY)
+
+    -- Top-centre spreader HUD (DB icon + section cells + slurry details)
+    g_spsSpreaderHUD = SPSSpreaderHUD.new(SPS_MOD_DIRECTORY)
+
+    -- Sprayer pipe visual
+    if g_spsSprayerPipeVisual ~= nil then
+        g_spsSprayerPipeVisual:delete()
+        g_spsSprayerPipeVisual = nil
+    end
+    g_spsSprayerPipeVisual = SPSSprayerPipeVisual.new(SPS_MOD_DIRECTORY)
+    g_spsSprayerPipeVisual:load()
 
     -- Create water plane manager (but don't load planes yet - terrain not ready)
     g_waterPlaneManager = SPSWaterPlaneManager.new(SPS_MOD_DIRECTORY)
@@ -257,6 +352,7 @@ function SPSMod:loadMap(filename)
         for _, placeable in ipairs(placeables) do
             if placeable ~= nil and (placeable.spec_silo ~= nil or placeable.spec_husbandry ~= nil or placeable.spec_siloExtension ~= nil or placeable.spec_productionPoint ~= nil) then
                 g_slurryPipeManager:registerPlaceable(placeable)
+                g_slurryPipeManager:registerSprayerPlaceable(placeable)
             end
         end
         -- Map-embedded (preplaced) placeables
@@ -265,6 +361,7 @@ function SPSMod:loadMap(filename)
                 local placeable = data.placeable
                 if placeable ~= nil and (placeable.spec_silo ~= nil or placeable.spec_husbandry ~= nil or placeable.spec_siloExtension ~= nil or placeable.spec_productionPoint ~= nil) then
                     g_slurryPipeManager:registerPlaceable(placeable)
+                    g_slurryPipeManager:registerSprayerPlaceable(placeable)
                 end
             end
         end
@@ -291,14 +388,25 @@ function SPSMod:deleteMap()
         delete(g_spsSlurryMaterialNode)
         g_spsSlurryMaterialNode = nil
         g_spsSlurryMaterial = nil
+        g_spsWaterMaterial  = nil
     end
     if g_spsPipeVisual ~= nil then
         g_spsPipeVisual:delete()
         g_spsPipeVisual = nil
     end
+    if g_spsSprayerPipeVisual ~= nil then
+        g_spsSprayerPipeVisual:delete()
+        g_spsSprayerPipeVisual = nil
+    end
     if g_slurryPipeManager ~= nil then
         g_slurryPipeManager:delete()
         g_slurryPipeManager = nil
+    end
+
+    if g_spsSpreaderHUD ~= nil then
+        if g_spsSpreaderHUD:isEditMode() then SPSMod:exitHudEdit() end
+        g_spsSpreaderHUD:delete()
+        g_spsSpreaderHUD = nil
     end
 
     -- Delete water pipe activatable
@@ -314,9 +422,78 @@ function SPSMod:deleteMap()
     end
 end
 
+function SPSMod:draw()
+    if g_spsSpreaderHUD ~= nil then
+        g_spsSpreaderHUD:draw()
+    end
+end
+
+function SPSMod:mouseEvent(posX, posY, isDown, isUp, button)
+    if g_spsSpreaderHUD == nil or not g_spsSpreaderHUD:isEditMode() then return end
+    -- scroll wheel scales
+    if isDown and button == Input.MOUSE_BUTTON_WHEEL_UP then
+        g_spsSpreaderHUD:applyScroll(0.05)
+    elseif isDown and button == Input.MOUSE_BUTTON_WHEEL_DOWN then
+        g_spsSpreaderHUD:applyScroll(-0.05)
+    end
+    -- hold left button to drag the panel
+    if button == Input.MOUSE_BUTTON_LEFT then
+        if isDown then SPSMod._hudDragging = true
+        elseif isUp then SPSMod._hudDragging = false end
+    end
+    if SPSMod._hudDragging then
+        g_spsSpreaderHUD:applyMouseMove(posX, posY)
+    end
+end
+
+SPSMod.HUD_EDIT_CONTEXT = "SPS_HUD_EDIT_CONTEXT"
+
+-- Enter edit mode: switch to a fresh input context so the vehicle camera / driving
+-- actions go inactive (the camera no longer reads the mouse axis), show the cursor, and
+-- register the exit toggle inside that context so the same key locks it again.
+function SPSMod:enterHudEdit()
+    if g_spsSpreaderHUD == nil or g_spsSpreaderHUD:isEditMode() then return end
+    if g_inputBinding == nil then return end
+    g_spsSpreaderHUD:setEditMode(true)
+    SPSMod._hudDragging = false
+    g_inputBinding:setContext(SPSMod.HUD_EDIT_CONTEXT, true, false)
+    local _, exitId = g_inputBinding:registerActionEvent(
+        InputAction.SPS_HUD_EDIT, SPSMod, SPSMod.onHudEditExitInput,
+        false, true, false, true, nil)
+    SPSMod._hudEditExitId = exitId
+    if exitId ~= nil and exitId ~= "" then
+        g_inputBinding:setActionEventText(exitId, g_i18n:getText("action_spsHudEdit"))
+        g_inputBinding:setActionEventTextVisibility(exitId, true)
+        g_inputBinding:setActionEventTextPriority(exitId, GS_PRIO_VERY_HIGH)
+    end
+    g_inputBinding:setShowMouseCursor(true)
+    print("[SPS HUD] edit mode ON (context switched, camera frozen)")
+end
+
+-- Exit edit mode: revert the context (re-enabling camera / driving) and hide the cursor.
+function SPSMod:exitHudEdit()
+    if g_inputBinding == nil then return end
+    if g_spsSpreaderHUD ~= nil then g_spsSpreaderHUD:setEditMode(false) end
+    SPSMod._hudDragging = false
+    if SPSMod._hudEditExitId ~= nil and SPSMod._hudEditExitId ~= "" then
+        g_inputBinding:removeActionEvent(SPSMod._hudEditExitId)
+        SPSMod._hudEditExitId = nil
+    end
+    g_inputBinding:setShowMouseCursor(false)
+    if g_inputBinding:getContextName() == SPSMod.HUD_EDIT_CONTEXT then
+        g_inputBinding:revertContext(true)
+    end
+    print("[SPS HUD] edit mode OFF (context reverted; position/scale persist on save)")
+end
+
+function SPSMod:onHudEditExitInput(actionName, inputValue, callbackState, isAnalog)
+    SPSMod:exitHudEdit()
+end
+
 function SPSMod:update(dt)
     if g_slurryPipeManager ~= nil then
         g_slurryPipeManager:update(dt)
+        g_slurryPipeManager:updateSprayers(dt)
     end
     
     -- Deferred water plane loading (wait for terrain to be ready)
@@ -342,13 +519,23 @@ function Vehicle:onFinishedLoading()
 
     if g_slurryPipeManager == nil then return end
 
+    -- Slurry registration
     local config = g_slurryPipeManager:findVehicleConfigForVehicle(self)
-    if config == nil then return end
+    if config ~= nil then
+        g_slurryPipeManager:registerVehicle(self)
+    end
 
+    -- Sprayer registration (independent of slurry — a vehicle may have either or both)
+    local sprayerConfig = g_slurryPipeManager:findSprayerVehicleConfigForVehicle(self)
+    if sprayerConfig ~= nil then
+        g_slurryPipeManager:registerSprayerVehicle(self)
+    end
 
-    g_slurryPipeManager:registerVehicle(self)
-
+    -- Samson-specific patch and action events only apply to slurry-registered vehicles
     if not g_slurryPipeManager:isRegistered(self) then return end
+    -- A blockage-only spreader implement (dribble bar) is SPS-registered for its
+    -- blockage nodes only; it must NOT get tanker patches/controls — its tanker drives it.
+    if g_slurryPipeManager:isSpreaderImplement(self) then return end
 
 
     -- ---------------------------------------------------------------------------
@@ -389,10 +576,55 @@ function Vehicle:registerActionEvents(excludedVehicle)
     end
 
     if g_slurryPipeManager == nil then return end
-    if not g_slurryPipeManager:isRegistered(self) then return end
-    if self.spec_turnOnVehicle == nil then return end
     if not self.isClient then return end
     if not self:getIsActiveForInput(true) then return end
+
+    -- ---------------------------------------------------------------------------
+    -- SPRAYER safety net: if any R/I events slipped past the type-level override,
+    -- remove them here. Uses findSprayerVehicleConfigForVehicle (needs only
+    -- configFileName) so it works regardless of registration timing.
+    -- ---------------------------------------------------------------------------
+    if g_slurryPipeManager:isSprayerVehicleRegistered(self)
+    or g_slurryPipeManager:findSprayerVehicleConfigForVehicle(self) ~= nil then
+        local specD = self.spec_dischargeable
+        if specD ~= nil and specD.actionEvents ~= nil then
+            local evTip = specD.actionEvents[InputAction.TOGGLE_TIPSTATE]
+            if evTip ~= nil then
+                g_inputBinding:removeActionEvent(evTip.actionEventId)
+                specD.actionEvents[InputAction.TOGGLE_TIPSTATE] = nil
+                print("[SPS INIT] sprayer cab: removed TOGGLE_TIPSTATE (I)")
+            end
+            local evGround = specD.actionEvents[InputAction.TOGGLE_TIPSTATE_GROUND]
+            if evGround ~= nil then
+                g_inputBinding:removeActionEvent(evGround.actionEventId)
+                specD.actionEvents[InputAction.TOGGLE_TIPSTATE_GROUND] = nil
+                print("[SPS INIT] sprayer cab: removed TOGGLE_TIPSTATE_GROUND (R)")
+            end
+        end
+        -- FillUnit's <unloading> XML element causes it to register InputAction.UNLOAD
+        -- (the "I — UNLOAD" pallet-spawn action) when the implement is unfolded /
+        -- active for input. Re-registration happens on fold/unfold, so this hook
+        -- catches each register cycle and strips it.
+        local specFU = self.spec_fillUnit
+        if specFU ~= nil and specFU.actionEvents ~= nil then
+            local evUnload = specFU.actionEvents[InputAction.UNLOAD]
+            if evUnload ~= nil then
+                g_inputBinding:removeActionEvent(evUnload.actionEventId)
+                specFU.actionEvents[InputAction.UNLOAD] = nil
+                specFU.unloadActionEventId = nil
+                print("[SPS INIT] sprayer cab: removed UNLOAD (I — pallet spawn)")
+            end
+        end
+    end
+
+    -- ---------------------------------------------------------------------------
+    -- SLURRY block — skip for sprayer-registered vehicles (sprayer controls
+    -- are outside only via SPSSprayerPumpControl, not in the cab).
+    -- ---------------------------------------------------------------------------
+    if not g_slurryPipeManager:isRegistered(self) then return end
+    if g_slurryPipeManager:isSpreaderImplement(self) then return end
+    if g_slurryPipeManager:findSprayerVehicleConfigForVehicle(self) ~= nil then return end
+    if self.spec_turnOnVehicle == nil then return end
 
     -- Agitator-only vehicles need no SPS action events — they use PTO directly
     if g_slurryPipeManager:isVehicleAgitatorOnly(self) then return end
@@ -428,66 +660,11 @@ function Vehicle:registerActionEvents(excludedVehicle)
     -- Spreader vehicles: use state.pumpRunning exclusively — never call setIsTurnedOn.
     --   setIsTurnedOn is reserved for when the spreader valve opens/closes.
     -- Non-spreader vehicles: call setIsTurnedOn which drives PTO sounds/animations.
-    local pumpCallback
-    if hasSpreader then
-        pumpCallback = function(vehicle, actionName, inputValue, callbackState, isAnalog)
-            if g_slurryPipeManager == nil then return end
-            -- Check motor running and PTO (but NOT spreader valve or TurnOnVehicle state)
-            local root = vehicle:getRootVehicle()
-            if root ~= nil and root.getIsMotorStarted ~= nil and not root:getIsMotorStarted() then
-                local warning = vehicle:getTurnedOnNotAllowedWarning()
-                if warning ~= nil and vehicle.isClient then
-                    g_currentMission:showBlinkingWarning(warning, 2000)
-                end
-                print("[SPS PUMP] spreader vehicle pump blocked — motor not started")
-                return
-            end
-            if not SlurryPipeSystemOverride.isPTOConnected(vehicle) then
-                print("[SPS PUMP] spreader vehicle pump blocked — PTO not connected")
-                return
-            end
-            local state = g_slurryPipeManager:getVehicleState(vehicle)
-            if state == nil then return end
-            local newPump = not state.pumpRunning
-            print("[SPS PUMP] spreader vehicle pump -> " .. tostring(newPump) .. " spreaderValveOpen=" .. tostring(state.spreaderValveOpen))
-            if g_server ~= nil then
-                state.pumpRunning = newPump
-                SPSSelfPumpStateEvent.sendEvent(vehicle, newPump)
-                -- Call setIsTurnedOn to drive PTO sounds and animations.
-                -- Discharge still requires spreaderValveOpen via getIsDischargeNodeActive.
-                if newPump then
-                    vehicle:setIsTurnedOn(true)
-                    print("[SPS PUMP] pump on — setIsTurnedOn(true) for PTO sounds")
-                else
-                    -- Turning off: close spreader valve too if open
-                    if state.spreaderValveOpen then
-                        state.spreaderValveOpen = false
-                        SPSSpreaderValveEvent.sendEvent(vehicle, false)
-                        print("[SPS PUMP] pump off — spreader valve closed")
-                    end
-                    vehicle:setIsTurnedOn(false)
-                    print("[SPS PUMP] pump off — setIsTurnedOn(false)")
-                end
-                g_slurryPipeManager:updateActionEventTexts(vehicle)
-            else
-                SPSSelfPumpStateEvent.sendEvent(vehicle, newPump)
-            end
-        end
-    else
-        pumpCallback = function(vehicle, actionName, inputValue, callbackState, isAnalog)
-            if not vehicle:getIsTurnedOn() and not vehicle:getCanBeTurnedOn() then
-                local warning = vehicle:getTurnedOnNotAllowedWarning()
-                if warning ~= nil and vehicle.isClient then
-                    g_currentMission:showBlinkingWarning(warning, 2000)
-                end
-                print("[SPS PUMP] non-spreader pump blocked — getCanBeTurnedOn false")
-                return
-            end
-            print("[SPS PUMP] non-spreader setIsTurnedOn -> " .. tostring(not vehicle:getIsTurnedOn()))
-            vehicle:setIsTurnedOn(not vehicle:getIsTurnedOn())
-            if g_slurryPipeManager ~= nil then
-                g_slurryPipeManager:updateActionEventTexts(vehicle)
-            end
+    -- Cab PTO/pump toggle now routes through the shared manager method so the
+    -- outside ptoControl node and the cab do the identical thing.
+    local pumpCallback = function(vehicle, actionName, inputValue, callbackState, isAnalog)
+        if g_slurryPipeManager ~= nil then
+            g_slurryPipeManager:togglePump(vehicle)
         end
     end
     -- All SPS actions use addActionEvent (never addPoweredActionEvent) so fold state
@@ -499,14 +676,35 @@ function Vehicle:registerActionEvents(excludedVehicle)
     if pid ~= nil then
         local state = g_slurryPipeManager:getVehicleState(self)
         local pumpOn = hasSpreader and (state and state.pumpRunning == true) or self:getIsTurnedOn()
-        g_inputBinding:setActionEventText(pid, pumpOn
-            and g_i18n:getText("action_slurryPumpOff")
-            or  g_i18n:getText("action_slurryPumpOn"))
+        -- HVP tankers drive a high-volume pump rather than building tank vacuum, so the
+        -- prompt names the HVP; vacuum/conduit keep the existing pump wording.
+        local pumpType = g_slurryPipeManager:getPumpType(self)
+        local pumpTextOff, pumpTextOn
+        if pumpType == "HVP" then
+            pumpTextOff = g_i18n:getText("action_spsHVPOff")
+            pumpTextOn  = g_i18n:getText("action_spsHVPOn")
+        else
+            pumpTextOff = g_i18n:getText("action_slurryPumpOff")
+            pumpTextOn  = g_i18n:getText("action_slurryPumpOn")
+        end
+        g_inputBinding:setActionEventText(pid, pumpOn and pumpTextOff or pumpTextOn)
         g_inputBinding:setActionEventTextPriority(pid, GS_PRIO_VERY_HIGH)
         pumpEventId = pid
     end
 
-    -- SPS_TOGGLE_FLOW: for vehicles with fill arms or conduit pumps
+    -- SPS_HUD_EDIT: enter spreader-HUD edit mode (camera frozen via context switch).
+    -- Default bind is middle mouse (rebindable in Controls). Exiting is handled by a
+    -- second binding registered inside the edit context (see SPSMod:enterHudEdit).
+    local _, hudEditId = self:addActionEvent(
+        spsEvents, InputAction.SPS_HUD_EDIT, self,
+        function(vehicle, actionName, inputValue, callbackState, isAnalog)
+            SPSMod:enterHudEdit()
+        end,
+        false, true, false, true, nil)
+    if hudEditId ~= nil then
+        g_inputBinding:setActionEventText(hudEditId, g_i18n:getText("action_spsHudEdit"))
+        g_inputBinding:setActionEventTextPriority(hudEditId, GS_PRIO_LOW)
+    end
     if g_slurryPipeManager:vehicleHasFillArms(self) or g_slurryPipeManager:isVehicleConduit(self) then
         local _, id = self:addActionEvent(
             spsEvents,
@@ -521,9 +719,12 @@ function Vehicle:registerActionEvents(excludedVehicle)
         )
         if id ~= nil then
             local state   = g_slurryPipeManager:getVehicleState(self)
+            local isConduit    = g_slurryPipeManager:isVehicleConduit(self)
+            local flowOpenKey  = isConduit and "action_spsConduitFlowOpen"  or "action_slurryFlowOpen"
+            local flowCloseKey = isConduit and "action_spsConduitFlowClose" or "action_slurryFlowClose"
             local flowTxt = (state and state.valveOpen)
-                and g_i18n:getText("action_slurryFlowClose")
-                or  g_i18n:getText("action_slurryFlowOpen")
+                and g_i18n:getText(flowCloseKey)
+                or  g_i18n:getText(flowOpenKey)
             g_inputBinding:setActionEventText(id, flowTxt)
             g_inputBinding:setActionEventTextPriority(id, GS_PRIO_VERY_HIGH)
             flowEventId = id
@@ -531,32 +732,43 @@ function Vehicle:registerActionEvents(excludedVehicle)
     end
 
     -- SPS_TOGGLE_DIRECTION
-    local _, dirEventId = self:addActionEvent(
-        spsEvents,
-        InputAction.SPS_TOGGLE_DIRECTION,
-        self,
-        function(vehicle, actionName, inputValue, callbackState, isAnalog)
-            if g_slurryPipeManager ~= nil then
-                g_slurryPipeManager:onActionToggleDirection(vehicle)
+    -- Suppressed in the cab when the tanker carries an outside <directionControl>
+    -- node — in that case direction is set only at the node.
+    local dirEventId = nil
+    if not (g_slurryPipeManager ~= nil and g_slurryPipeManager:vehicleHasOutsideDirectionControl(self)) then
+        local _, dirId = self:addActionEvent(
+            spsEvents,
+            InputAction.SPS_TOGGLE_DIRECTION,
+            self,
+            function(vehicle, actionName, inputValue, callbackState, isAnalog)
+                if g_slurryPipeManager ~= nil then
+                    g_slurryPipeManager:onActionToggleDirection(vehicle)
+                end
+            end,
+            false, true, false, true, nil
+        )
+        if dirId ~= nil then
+            local state = g_slurryPipeManager:getVehicleState(self)
+            local isConduit = g_slurryPipeManager:isVehicleConduit(self)
+            local pumpType  = g_slurryPipeManager:getPumpType(self)
+            local dirTxt
+            if isConduit then
+                dirTxt = (state and state.direction == SPS_DIRECTION_FILL)
+                    and g_i18n:getText("action_spsConduitDirBtoA")
+                    or  g_i18n:getText("action_spsConduitDirAtoB")
+            elseif pumpType == "HVP" then
+                dirTxt = (state and state.direction == SPS_DIRECTION_FILL)
+                    and g_i18n:getText("action_spsHVPDirDischarge")
+                    or  g_i18n:getText("action_spsHVPDirFill")
+            else
+                dirTxt = (state and state.direction == SPS_DIRECTION_FILL)
+                    and g_i18n:getText("action_slurryDirectionDischarge")
+                    or  g_i18n:getText("action_slurryDirectionFill")
             end
-        end,
-        false, true, false, true, nil
-    )
-    if dirEventId ~= nil then
-        local state = g_slurryPipeManager:getVehicleState(self)
-        local isConduit = g_slurryPipeManager:isVehicleConduit(self)
-        local dirTxt
-        if isConduit then
-            dirTxt = (state and state.direction == SPS_DIRECTION_FILL)
-                and g_i18n:getText("action_spsConduitDirBtoA")
-                or  g_i18n:getText("action_spsConduitDirAtoB")
-        else
-            dirTxt = (state and state.direction == SPS_DIRECTION_FILL)
-                and g_i18n:getText("action_slurryDirectionDischarge")
-                or  g_i18n:getText("action_slurryDirectionFill")
+            g_inputBinding:setActionEventText(dirId, dirTxt)
+            g_inputBinding:setActionEventTextPriority(dirId, GS_PRIO_VERY_HIGH)
+            dirEventId = dirId
         end
-        g_inputBinding:setActionEventText(dirEventId, dirTxt)
-        g_inputBinding:setActionEventTextPriority(dirEventId, GS_PRIO_VERY_HIGH)
     end
 
     -- SPS_TOGGLE_SPREADER: only for vehicles with a spreader (spec_dischargeable)
@@ -596,6 +808,9 @@ function Vehicle:delete(immediate)
         if g_slurryPipeManager:isRegistered(self) then
             g_slurryPipeManager:unregisterVehicle(self)
         end
+        if g_slurryPipeManager:isSprayerVehicleRegistered(self) then
+            g_slurryPipeManager:unregisterSprayerVehicle(self)
+        end
     end
     if origVehicleDelete ~= nil then
         origVehicleDelete(self, immediate)
@@ -615,6 +830,9 @@ function Placeable:finalizePlacement()
         if g_slurryPipeManager:getPlaceableEntry(self) == nil then
             g_slurryPipeManager:registerPlaceable(self)
         end
+        if g_slurryPipeManager:getSprayerPlaceableEntry(self) == nil then
+            g_slurryPipeManager:registerSprayerPlaceable(self)
+        end
     end
 end
 
@@ -622,6 +840,7 @@ local origPlaceableDelete = Placeable.delete
 function Placeable:delete(immediate)
     if g_slurryPipeManager ~= nil and (self.spec_silo ~= nil or self.spec_husbandry ~= nil or self.spec_siloExtension ~= nil or self.spec_productionPoint ~= nil) then
         g_slurryPipeManager:unregisterPlaceable(self)
+        g_slurryPipeManager:unregisterSprayerPlaceable(self)
     end
     if origPlaceableDelete ~= nil then
         origPlaceableDelete(self, immediate)

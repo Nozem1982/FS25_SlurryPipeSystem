@@ -35,10 +35,30 @@ end
 function SPSPipeActivatable:getIsActivatable(dirX, dirY, dirZ)
     if g_localPlayer == nil then return false end
     if self.coupling.mountNode == nil or not entityExists(self.coupling.mountNode) then return false end
+    -- AI guard: hide activatable when the owning vehicle's root is AI-driven.
+    if self.vehicle ~= nil
+    and SlurryPipeSystemOverride ~= nil
+    and SlurryPipeSystemOverride.isAIControlled(self.vehicle) then
+        return false
+    end
     local px, py, pz = getWorldTranslation(g_localPlayer.rootNode)
-    local cx, cy, cz = getWorldTranslation(self.coupling.mountNode)
-    local dist = MathUtil.vector3Length(px - cx, py - cy, pz - cz)
-    if dist > SPSPipeActivatable.ACTIVATE_RADIUS then return false end
+    -- The player must stand inside this coupling's own arc triangle for it to be
+    -- selected — that is what the arc is for. Only fall back to a proximity radius
+    -- when the coupling has no resolvable arc geometry.
+    local useArc = false
+    if g_slurryPipeManager ~= nil then
+        local apex, arc1, arc2 = g_slurryPipeManager:_getCouplingArcNodes(self.coupling)
+        if apex ~= nil and arc1 ~= nil and arc2 ~= nil and entityExists(apex) then
+            useArc = true
+        end
+    end
+    if useArc then
+        if not g_slurryPipeManager:isPointInCouplingArc(self.coupling, px, pz) then return false end
+    else
+        local cx, cy, cz = getWorldTranslation(self.coupling.mountNode)
+        local dist = MathUtil.vector3Length(px - cx, py - cy, pz - cz)
+        if dist > SPSPipeActivatable.ACTIVATE_RADIUS then return false end
+    end
     local state = self:_getState()
     return state ~= nil
 end

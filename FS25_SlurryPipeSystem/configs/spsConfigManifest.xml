@@ -39,23 +39,51 @@
 
     <vehicleConfigs>
         <!-- Stock vehicles -->
+		<vehicle path="data/vehicles/amazone/ux5201Super/ux5201Super.xml"/>
+		<vehicle path="data/vehicles/bomech/multi4XL/multi4XL.xml"/>
+		<vehicle path="data/vehicles/bomech/multiProfi/multiProfi.xml"/>
+		<vehicle path="data/vehicles/bomech/tracPack/tracPack.xml"/>
+		<vehicle path="data/vehicles/farmtech/supercis800/supercis800.xml"/>
         <vehicle path="data/vehicles/kaweco/profi2/profi2.xml"/>
         <vehicle path="data/vehicles/kotte/frc65/frc65.xml"/>
 		<vehicle path="data/vehicles/kotte/pq32000/pq32000.xml"/>
 		<vehicle path="data/vehicles/kotte/tsa/tsa.xml"/>
 		<vehicle path="data/vehicles/oxbo/at5105/at5105.xml"/>
 		<vehicle path="data/vehicles/samsonAgro/pgII28Genesis/pgII28Genesis.xml"/>
+		<vehicle path="data/vehicles/samsonAgro/sbh4_36/sbh4_36.xml"/>
 		<vehicle path="data/vehicles/zunhammer/ult18/ult18.xml"/>
 		<vehicle path="data/vehicles/zunhammer/ult24/ult24.xml"/>
-		<vehicle path="data/vehicles/farmtech/supercis800/supercis800.xml"/>
+		<vehicle path="data/vehicles/zunhammer/vibro/vibro.xml"/>
 		
         <!-- Mod vehicles -->
-        <vehicle path="FS25_Joskin_Cobra/cobra.xml"/>
-        <vehicle path="FS25_Pichon_BMIX80/BMIX.xml"/>
+        <vehicle path="FS25_Joskin_Cobra/cobra.xml"
+            configFolder="mods/FS25_Joskin_Cobra"/>
+        <vehicle path="FS25_Pichon_BMIX80/BMIX.xml"
+            configFolder="mods/FS25_Pichon_BMIX80"/>
         
         <!-- PTOSlurryPump uses embedded <slurryPipeSystem>, no manifest entry needed -->
     </vehicleConfigs>
-
+	
+	<sprayerVehicleConfigs>
+        <!-- Stock vehicles -->
+        <vehicle path="data/vehicles/agrifac/condorEndurance2/condorEndurance2.xml"/>
+		<vehicle path="data/vehicles/agrio/dinoII/dinoII.xml"/>
+		<vehicle path="data/vehicles/amazone/ux5201Super/ux5201Super.xml"/>
+		<vehicle path="data/vehicles/berthoud/vantage4300/vantage4300.xml"/>
+		<vehicle path="data/vehicles/caseIH/patriot50/patriot50.xml"/>
+		<vehicle path="data/vehicles/hardi/aeon5200/aeon5200.xml"/>
+		<vehicle path="data/vehicles/hardi/mega1200L/mega1200L.xml"
+			configFolder="data/vehicles/hardi/mega1200L/mega1200L"/>
+		<vehicle path="data/vehicles/hardi/mega1200L/mega1200LTank.xml"
+			configFolder="data/vehicles/hardi/mega1200L/mega1200LTank"/>
+		<vehicle path="data/vehicles/hardi/mercury4000L/mercury4000L.xml"/>
+		
+		<!-- Mod vehicles -->
+        <vehicle path="FS25_hardiNavigator4000/navigator4000.xml"
+            configFolder="mods/FS25_hardiNavigator4000"/>
+		
+	</sprayerVehicleConfigs>
+	
     <placeableConfigs>
         <!-- Stock placeables -->
         <placeable path="data/placeables/brandless/liquidManureTanks/baseTank/baseTank.xml"/>
@@ -67,6 +95,7 @@
         <placeable path="data/placeables/rudolfHormann/cowBarnMedium/cowBarnMedium.xml"/>
         <placeable path="data/placeables/rudolfHormann/pigBarnBig/pigBarnBig.xml"/>
         <placeable path="data/placeables/rudolfHormann/pigBarnMedium/pigBarnMedium.xml"/>
+		<placeable path="data/placeables/meridian/liquidFlatBottomTank1630/liquidFlatBottomTank1630.xml"/>
 		
 		<placeable path="data/placeables/planET/bga99kw/bga99kw.xml"/>
 		<placeable path="data/placeables/planET/bga250kw/bga250kw.xml"/>
@@ -110,6 +139,17 @@
                    configFolder="mods/FS25_Witcombe/map/placeables/cowBarn01"/>
         <placeable path="FS25_Witcombe/map/placeables/cowBarnParlour/cowBarnParlour.xml"
                    configFolder="mods/FS25_Witcombe/map/placeables/cowBarnParlour"/>
+		
     </placeableConfigs>
-
+	
+	<sprayerPlaceableConfigs>
+		<!-- Stock placeables -->
+    	<placeable path="data/placeables/meridian/liquidFlatBottomTank1630/liquidFlatBottomTank1630.xml"/>
+		
+		<!-- Mod placeables -->
+		<placeable path="FS25_Witcombe/map/placeables/liquidFert/large/liquidFertLarge.xml"
+                   configFolder="mods/FS25_Witcombe/map/placeables/liquidFert/large"/>
+		<placeable path="FS25_Witcombe/map/placeables/liquidFert/small/liquidFertSmall.xml"
+                   configFolder="mods/FS25_Witcombe/map/placeables/liquidFert/small"/>
+	</sprayerPlaceableConfigs>
 </spsConfigManifest>

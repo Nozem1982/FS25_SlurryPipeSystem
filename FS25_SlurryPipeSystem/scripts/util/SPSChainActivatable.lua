@@ -35,15 +35,42 @@ function SPSChainActivatable:getIsActivatable()
     if g_localPlayer == nil then return false end
     local node = self:_getNode()
     if node == nil or node == 0 or not entityExists(node) then return false end
+    -- AI guard: hide activatable if either end of this chain (anchor coupling,
+    -- any segment chain coupling, or any of their connected partners) is owned
+    -- by an AI-driven vehicle. Chain interaction must be player-only.
+    if self:_isOnAIVehicle() then return false end
     local px, py, pz = getWorldTranslation(g_localPlayer.rootNode)
-    local cx, cy, cz = getWorldTranslation(node)
-    local dist = MathUtil.vector3Length(px - cx, py - cy, pz - cz)
-    -- Anchor while live pipe being walked: larger radius so player can finalise
-    local radius = SPSChainActivatable.ACTIVATE_RADIUS
-    if self.arcIndex == 0 and self.chain ~= nil and self.chain.liveSegment ~= nil then
-        radius = 3.5
+    -- Player detection is arc-based: stand inside the relevant coupling's arc.
+    -- Anchor (arcIndex 0) uses its own coupling; an open laid-pipe end uses that
+    -- segment's terminus arc so the player can stand in it to add another pipe.
+    -- A live pipe being walked, the remove (pipeRoot) prompt, and couplings with
+    -- no arc geometry all fall back to the existing proximity radius.
+    local arcCoupling = nil
+    if self.arcIndex == 0 then
+        if self.chain == nil or self.chain.liveSegment == nil then
+            arcCoupling = self.coupling
+        end
+    elseif self.isEndActivatable and self.chain ~= nil then
+        local seg = self.chain.segments[self.arcIndex]
+        if seg ~= nil then arcCoupling = seg.chainCoupling end
     end
-    if dist > radius then return false end
+    local useArc = false
+    if arcCoupling ~= nil and g_slurryPipeManager ~= nil then
+        local apex, arc1, arc2 = g_slurryPipeManager:_getCouplingArcNodes(arcCoupling)
+        if apex ~= nil and arc1 ~= nil and arc2 ~= nil and entityExists(apex) then
+            useArc = true
+        end
+    end
+    if useArc then
+        if not g_slurryPipeManager:isPointInCouplingArc(arcCoupling, px, pz) then return false end
+    else
+        local cx, cy, cz = getWorldTranslation(node)
+        local radius = SPSChainActivatable.ACTIVATE_RADIUS
+        if self.arcIndex == 0 and self.chain ~= nil and self.chain.liveSegment ~= nil then
+            radius = 3.5
+        end
+        if MathUtil.vector3Length(px - cx, py - cy, pz - cz) > radius then return false end
+    end
     -- Anchor: hide when another coupling arc overlaps (SPSPipeActivatable handles connect)
     -- Skip this when a live pipe is being walked — finalisePipe must show regardless
     -- Skip this when chain has segments — removal must show even if arcs overlap
@@ -151,7 +178,7 @@ end
 
 function SPSChainActivatable:_onShortPress()
     local state = self:_getState()
-    print("[SPS SPCA] ChainActivatable shortPress arc=" .. self.arcIndex .. " isEnd=" .. tostring(self.isEndActivatable) .. " state=" .. tostring(state))
+--    print("[SPS SPCA] ChainActivatable shortPress arc=" .. self.arcIndex .. " isEnd=" .. tostring(self.isEndActivatable) .. " state=" .. tostring(state))
     if state == "layFirstPipe" then
         -- Start laying from anchor coupler
         if g_slurryPipeManager ~= nil then
@@ -216,12 +243,12 @@ end
 
 function SPSChainActivatable:_onLongPress()
     local state = self:_getState()
-    print("[SPS SPCA] ChainActivatable longPress arc=" .. self.arcIndex .. " isEnd=" .. tostring(self.isEndActivatable) .. " state=" .. tostring(state))
+--    print("[SPS SPCA] ChainActivatable longPress arc=" .. self.arcIndex .. " isEnd=" .. tostring(self.isEndActivatable) .. " state=" .. tostring(state))
     if state == "finalisePipe" then
         -- Long press while laying: cancel the live pipe entirely
         if self.chain ~= nil then
             self.chain:cancelLivePipe()
-            print("[SPS SPCA] ChainActivatable: cancelled live pipe via long press")
+--            print("[SPS SPCA] ChainActivatable: cancelled live pipe via long press")
         end
     elseif state == "deployCoupling" then
         if g_slurryPipeManager ~= nil then
@@ -330,6 +357,40 @@ function SPSChainActivatable:_onLongPress()
     end
 end
 
+-- AI guard helper: returns true if any coupling reachable from this chain
+-- activatable is owned by a vehicle whose root is being driven by AI.
+-- Checked endpoints: this activatable's coupling, the chain's anchor coupling,
+-- every segment chain coupling, and their connected partner couplings.
+function SPSChainActivatable:_isOnAIVehicle()
+    if g_slurryPipeManager == nil or SlurryPipeSystemOverride == nil then return false end
+    local function ownerIsAI(c)
+        if c == nil then return false end
+        local v, _ = g_slurryPipeManager:_findCouplingOwner(c)
+        return v ~= nil and SlurryPipeSystemOverride.isAIControlled(v)
+    end
+    if ownerIsAI(self.coupling) then return true end
+    if self.chain ~= nil then
+        if ownerIsAI(self.chain.anchorCoupling) then return true end
+        if self.chain.anchorCoupling ~= nil
+        and ownerIsAI(self.chain.anchorCoupling.connectedPartnerCoupling) then
+            return true
+        end
+        if self.chain.segments ~= nil then
+            for _, seg in ipairs(self.chain.segments) do
+                if seg ~= nil and seg.chainCoupling ~= nil then
+                    if ownerIsAI(seg.chainCoupling) then return true end
+                    if ownerIsAI(seg.chainCoupling.connectedPartnerCoupling) then return true end
+                end
+                if seg ~= nil and seg.chainStartCoupling ~= nil then
+                    if ownerIsAI(seg.chainStartCoupling) then return true end
+                    if ownerIsAI(seg.chainStartCoupling.connectedPartnerCoupling) then return true end
+                end
+            end
+        end
+    end
+    return false
+end
+
 function SPSChainActivatable:_getState()
     -- Anchor (arcIndex == 0)
     if self.arcIndex == 0 then
@@ -340,7 +401,12 @@ function SPSChainActivatable:_getState()
 
         if self.coupling ~= nil and self.coupling.isConnected then
             -- Still allow finalise if a live pipe is being walked
-            if self.chain == nil or self.chain.liveSegment == nil then return nil end
+            if self.chain == nil or self.chain.liveSegment == nil then
+                --SlurryDebug.log(string.format(
+                --    "_getState: layFirstPipe refused — coupling id=%s already isConnected",
+                --    tostring(self.coupling.id)))
+                return nil
+            end
         end
 
         if self.chain == nil then
@@ -353,10 +419,16 @@ function SPSChainActivatable:_getState()
                 return "deployedCoupling"
             end
             
-            -- Vehicle couplings: extended 5.5m zone check before allowing lay first pipe
+            -- Vehicle couplings: only suppress "lay first pipe" when the player is
+            -- actually positioned to connect to a real overlapping coupler (arc-based),
+            -- not by a blanket distance radius. Matches the connect/anchor gate used
+            -- in getIsActivatable.
             if self.coupling ~= nil and self.coupling.placeable == nil and g_slurryPipeManager ~= nil then
-                if g_slurryPipeManager:hasNearbyCoupling(self.coupling, 5.5) then
-                    return nil  -- Block: another coupling within 5.5m
+                if g_slurryPipeManager:findOverlappingCoupler(self.coupling) ~= nil then
+                    --SlurryDebug.log(string.format(
+                    --    "_getState: layFirstPipe refused — coupling id=%s has overlapping connectable coupler",
+                    --    tostring(self.coupling.id)))
+                    return nil  -- Block: a connectable coupler overlaps — offer connect instead
                 end
             end
             
@@ -368,10 +440,16 @@ function SPSChainActivatable:_getState()
         end
         -- No live pipe, no segments, no DS
         if #self.chain.segments == 0 and self.chain.dockingStation == nil then
-            -- Vehicle couplings: extended 5.5m zone check before allowing lay first pipe
+            -- Vehicle couplings: only suppress "lay first pipe" when the player is
+            -- actually positioned to connect to a real overlapping coupler (arc-based),
+            -- not by a blanket distance radius. Matches the connect/anchor gate used
+            -- in getIsActivatable.
             if self.coupling ~= nil and self.coupling.placeable == nil and g_slurryPipeManager ~= nil then
-                if g_slurryPipeManager:hasNearbyCoupling(self.coupling, 5.5) then
-                    return nil  -- Block: another coupling within 5.5m
+                if g_slurryPipeManager:findOverlappingCoupler(self.coupling) ~= nil then
+                    --SlurryDebug.log(string.format(
+                    --    "_getState: layFirstPipe refused (no-seg path) — coupling id=%s has overlapping connectable coupler",
+                    --    tostring(self.coupling.id)))
+                    return nil  -- Block: a connectable coupler overlaps — offer connect instead
                 end
             end
             
@@ -456,11 +534,13 @@ function SPSChainActivatable:_getState()
     -- Primary activatable (pipeRoot = start of pipe): remove from here
     -- Suppressed for placeable-anchored chains (anchor activatable handles that position).
     -- For vehicle-anchored chains, chain starts 3.5m away so pipeRoot IS the right place.
+    -- Use chain.localStart (set at lock time, never reset) rather than anchorCoupling,
+    -- so this still works after applyDisconnect has freed chain.anchorCoupling on drive-off.
     if self.arcIndex == 1 then
-        if g_slurryPipeManager ~= nil and self.chain ~= nil and self.chain.anchorCoupling ~= nil then
-            local vehicle, _ = g_slurryPipeManager:_findCouplingOwner(self.chain.anchorCoupling)
-            if vehicle == nil then return nil end
-        else
+        if self.chain == nil or self.chain.localStart == true then
+            --print(string.format(
+            --    "[SPS] _getState arcIndex==1: suppress remove — chain=%s localStart=%s",
+            --    tostring(self.chain ~= nil), tostring(self.chain and self.chain.localStart)))
             return nil
         end
     end

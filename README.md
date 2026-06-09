@@ -2,39 +2,86 @@
 
 **Realistic physical slurry pipe system for Farming Simulator 2025.**
 
-Replaces vanilla "drive into a trigger and fill" mechanics with a tactile system where you physically connect tanker fill arms or pipe chains, run a PTO-driven pump, control flow direction, and watch slurry move through real plumbing.
+Replaces vanilla "drive into a trigger and fill" mechanics with a tactile system where you
+physically connect tanker fill arms or pipe chains, run a PTO-driven pump, build pressure,
+control flow direction, and watch slurry move through real plumbing — with a slurry that
+actually thickens, crusts and blocks if you neglect it.
 
 ---
 
 ## What it does
 
-- **Fill arms** swung out of the tanker by joystick into open slurry pits or rubber boot ports on buildings and other vehicles.
-- **Pipe chains** — multi-segment pipes laid by walking from one coupler toward another, locked into place when both ends overlap with valid couplings.
-- **Direct bez pipes** — a single connecting pipe between two nearby couplers, useful for quick pump transfers between a tanker and a building.
-- **Conduit pump (PTO Slurry Pump)** — a passive pump trailer that lets two pipe chains transfer through it.
-- **Animated couplers and valves** — clamp handles close on connect, valve wheels rotate on open. Per-vehicle animations so each modder can ship their own.
+**Plumbing & transfer**
+- **Fill arms** swung out of the tanker by joystick into open slurry pits or rubber boot
+  ports on buildings and other vehicles.
+- **Pipe chains** — multi-segment pipes laid by walking from one coupler toward another,
+  locked into place when both ends overlap valid couplings.
+- **Direct bez pipes** — a single connecting pipe between two nearby couplers, for quick pump
+  transfers between a tanker and a building.
+- **Conduit pump (PTO Slurry Pump)** — a passive pump trailer that lets two pipe chains
+  transfer through it.
+- **Animated couplers and valves** — clamp handles close on connect, valve wheels rotate on
+  open.
 - **Coloured pipes** — pick from a palette per pipe segment, stored per save.
-- **Multi-fill-type support** — works with both `LIQUIDMANURE` and `DIGESTATE`. Pipe transfers automatically pick whichever fill type is actually present.
+- **Multi-fill-type support** — works with `LIQUIDMANURE` and `DIGESTATE`; transfers
+  automatically pick whichever fill type is actually present.
+
+**Pumps & pressure**
+- **Pump types** — `vacuum` (stored ±bar pressure model with a gauge), `HVP` high-volume
+  pump, `conduit` pump station, and `openTop` passive vessels (e.g. nurse tanks).
+- **Pressure model** — vacuum tankers build, hold, taper and purge a stored charge that
+  drives fill and discharge; spread behaviour scales with pressure rather than a simple
+  on/off.
+- **PTO shear bolt (opt-in)** — wears and snaps under load while turning with the PTO
+  engaged; walk-up hold-to-repair.
+
+**Slurry that behaves like slurry**
+- **Thickness / dry matter** — slurry thickens as dry matter concentrates; thickness affects
+  flow and spread.
+- **Crust & blockages** — an unmixed store crusts over the season; crusted, lumpy slurry can
+  block spreader outlets and the macerator. Mixing clears the risk; **adding water** dilutes
+  thick slurry.
+- **Agitation** — a manager-driven agitator works on any registered vehicle with an agitator
+  tip node, no specialization required.
+- **Water intake** — fill arms can draw water straight from map lakes and ponds wherever the
+  map provides SPS water planes.
+
+**Spreading**
+- **Dribble bars & band spreaders** — per-outlet blockage modelling, distributor macerator,
+  and a spreader HUD.
+- **Fertiliser / herbicide sprayers** — load liquid fertiliser or herbicide through the same
+  coupler-and-pipe system via a dedicated sprayer integration, operated from a single
+  walk-up pump control. No pressure model on sprayers — flow is a flat rate.
 
 ---
 
 ## How to add support to your own content
 
-Two paths, depending on whether you own the vehicle or placeable XML:
+**The supported way to add SPS to your own mod is the embedded path below.** You do **not**
+edit the SPS mod. Adding files inside the SPS folder is an internal mechanism used only for
+the fleet SPS ships itself; doing it to add your own content will cause multiplayer issues.
 
-### Bundled (SPS itself supports the content)
+### Embedded — for modders (recommended, MP-safe, self-contained)
 
-You add files inside the SPS mod folder and a manifest entry. Used for the stock fleet shipped with SPS, and for adding support to mods without modifying the modder's files.
+Add a single block to your **own** vehicle, placeable or map. No SPS-side files, no manifest
+entry. Players with SPS installed get integration automatically; players without SPS see your
+mod work normally. Self-contained, with no conflicts against other mods of the same vehicle.
 
-See **HowToVehicle.md** and **HowToPlaceable.md** for step-by-step walkthroughs.
+| Your content | Block to add | Where |
+|---|---|---|
+| Slurry tankers, dribble bars, nurse tanks, pump trailers | `<slurryPipeSystem>` | inside `<vehicle>` |
+| Fertiliser / herbicide sprayers | `<sprayerPipeSystem>` | inside `<vehicle>` |
+| Slurry stores, pits, lagoons | `<slurryPipeSystem>` | inside `<placeable>` |
+| Liquid-fertiliser source tanks | `<sprayerPipeSystem>` | inside `<placeable>` |
+| Map water sources (lakes/ponds) | an `SPS_waterNodes` node tree | in the **map i3d**, under the terrain root |
 
-### Embedded (you ship SPS-ready content as a third-party modder)
+See the setup guides listed in the documentation map below.
 
-You add a single `<slurryPipeSystem>` block to your vehicle or placeable XML. No SPS-side files needed. No manifest entry needed. Players with SPS installed get integration automatically; players without SPS see your mod work normally.
+### Bundled / manifest (SPS-internal — not for third-party modders)
 
-This is the **preferred path** for new modded content. Self-contained, no conflicts with other mods of the same vehicle.
-
-See **HowToVehicle.md** and **HowToPlaceable.md**.
+How SPS ships support for its own stock fleet: files inside the SPS folder plus a
+`spsConfigManifest.xml` entry, matched by config path. This requires modifying the SPS mod
+and is **not** a supported way to add your own content — use the embedded path instead.
 
 ---
 
@@ -43,45 +90,66 @@ See **HowToVehicle.md** and **HowToPlaceable.md**.
 ```
 FS25_SlurryPipeSystem/
 ├── modDesc.xml
-├── README.md                              ← this file
-├── HowToVehicle.md                        ← vehicle setup walkthrough
-├── HowToPlaceable.md                      ← placeable setup walkthrough
+├── README.md                                  ← this file
+├── docs/
+│   ├── Add_Slurry_Tanker_or_Spreader.md        ← tanker / dribble-bar setup (embedded)
+│   ├── Add_Fertiliser_Sprayer.md               ← sprayer setup (embedded)
+│   ├── Add_Placeable_Store_or_Tank.md          ← store / pit / source-tank setup (embedded)
+│   ├── Add_Map_Water.md                        ← map water sources (embedded, map i3d)
+│   ├── VehicleConfigSetup_ReadMe.xml           ← full vehicle schema reference
+│   └── PlaceableConfigSetup_ReadMe.xml         ← full placeable schema reference
 │
 ├── configs/
-│   ├── spsConfigManifest.xml              ← list of bundled-supported vehicles/placeables
-│   ├── couplerAnimations.xml              ← bundled coupler animation library
-│   ├── spsColors.xml                      ← pipe colour palette
-│   │
-│   ├── data/                              ← stock fleet bundled configs
-│   │   ├── vehicles/<vendor>/<model>/
-│   │   │   ├── fillPoints.xml
-│   │   │   └── nodeTree.i3d
-│   │   └── placeables/<vendor>/<model>/
-│   │       ├── fillPoints.xml
-│   │       └── nodeTree.i3d
-│   │
-│   └── mods/                              ← third-party fleet bundled configs
+│   ├── spsConfigManifest.xml                   ← bundled (SPS-internal) fleet list
+│   ├── couplerAnimations.xml                   ← coupler animation library (shared)
+│   ├── spsColors.xml                           ← pipe colour palette
+│   ├── data/                                   ← stock fleet bundled configs
+│   │   ├── vehicles/<vendor>/<model>/{fillPoints.xml, nodeTree.i3d}
+│   │   └── placeables/<vendor>/<model>/{fillPoints.xml, nodeTree.i3d}
+│   └── mods/                                   ← third-party fleet bundled configs (internal)
 │       └── <FS25_ModFolderName>/...
 │
-├── i3d/                                   ← SPS visual assets
-│   ├── pipes/slurryPipe.i3d              ← pipe mesh and rig
-│   ├── nodes/spsPivot.i3d                 ← chain pivot helper
-│   └── dockingStation/dockingStation.i3d  ← docking station building
+├── water/                                      ← optional external water nodes (SPS-internal)
+│   ├── spsWaterManifest.xml
+│   └── <mapFolder>/SPS_waterNodes.i3d
 │
-├── scripts/                               ← Lua source
-│   ├── SlurryPipeManager.lua              ← singleton manager
-│   ├── SPSPipeChain.lua                   ← chain segment + lifecycle
-│   ├── SPSPipeVisual.lua                  ← bezier pipe mesh driver
-│   ├── SPSPipeActivatable.lua             ← in-cab/at-coupler input
-│   ├── SPSChainActivatable.lua            ← chain end input
-│   ├── SPSPumpControlActivatable.lua      ← walkaround pump controls
-│   ├── SPSCouplerAnimator.lua             ← per-coupling animator
-│   ├── SPSEvents.lua                      ← network events
-│   └── ...
+├── i3d/                                        ← SPS visual assets
+│   ├── pipes/slurryPipe.i3d                    ← slurry pipe mesh and rig
+│   ├── pipes/sprayerPipe.i3d                   ← sprayer pipe mesh
+│   ├── nodes/spsPivot.i3d                      ← chain pivot helper
+│   └── dockingStation/dockingStation.i3d       ← docking station building
 │
-├── VehicleConfigSetup_ReadMe.xml          ← full vehicle schema reference
-└── PlaceableConfigSetup_ReadMe.xml        ← full placeable schema reference
+└── scripts/                                    ← Lua source
+    ├── init.lua                                ← entry point (loaded last)
+    ├── manager/
+    │   └── SlurryPipeManager.lua               ← singleton manager
+    ├── util/                                    ← shared helpers, pipes, activatables, HUD
+    │   ├── SlurryDebug.lua / SlurryNodeUtil.lua / SlurryTractorCapability.lua
+    │   ├── SlurryAgitatorEvent.lua
+    │   ├── SPSPipeChain.lua / SPSPipeVisual.lua          ← chain + bezier pipe driver
+    │   ├── SPSPipeActivatable.lua / SPSChainActivatable.lua / SPSPumpControlActivatable.lua
+    │   ├── SPSOutsideControlActivatable.lua / SPSBlockageActivatable.lua / SPSBlockageEvent.lua
+    │   ├── SPSCouplerAnimator.lua                        ← coupler / valve animator
+    │   ├── SPSCrustVegetation.lua                        ← crust foliage
+    │   ├── SPSShearBolt.lua / SPSShearBoltActivatable.lua / SPSShearBoltEvent.lua
+    │   ├── SPSSpreaderHUD.lua / SPSConduitHUDExtension.lua
+    │   └── SPSEvents.lua                                 ← network events
+    ├── settings/
+    │   └── SPSSettingsMenuExtension.lua         ← in-game settings page (source()'d late)
+    ├── water/
+    │   └── SPSWaterPlaneManager.lua             ← map water detection
+    ├── herbFertSprayer/                         ← fertiliser / herbicide sprayer support
+    │   ├── SPSSprayerPumpControl.lua / SPSSprayerEvents.lua
+    │   └── SPSSprayerPipeVisual.lua / SPSSprayerPipeActivatable.lua
+    ├── specializations/
+    │   └── SlurryAgitator.lua                   ← agitator specialization
+    └── overrides/
+        ├── ManureBarrelOverride.lua
+        └── PlaceableOverride.lua
 ```
+
+> Note: the doc filenames above are placeholders — rename them to whatever you commit. The
+> four `Add_*` guides correspond to the embedded setup walkthroughs.
 
 ---
 
@@ -89,41 +157,55 @@ FS25_SlurryPipeSystem/
 
 If you want to... | Read this
 ---|---
-Add SPS to a tanker or pump | **HowToVehicle.md**
-Add SPS to a building or storage tank | **HowToPlaceable.md**
-Look up an attribute on `<pipeCoupling>` etc. | **VehicleConfigSetup_ReadMe.xml** or **PlaceableConfigSetup_ReadMe.xml**
-Understand the manifest schema | **VehicleConfigSetup_ReadMe.xml** (top section)
-Ship a SPS-ready mod | HowToVehicle/HowToPlaceable, "Path B — Embedded"
+Add SPS to a slurry tanker or dribble bar | **Add_Slurry_Tanker_or_Spreader.md**
+Add SPS to a fertiliser / herbicide sprayer | **Add_Fertiliser_Sprayer.md**
+Add SPS to a store, pit or liquid source tank | **Add_Placeable_Store_or_Tank.md**
+Add water sources to a map | **Add_Map_Water.md**
+Look up an attribute on `<pipeCoupling>` etc. | **VehicleConfigSetup_ReadMe.xml** / **PlaceableConfigSetup_ReadMe.xml**
 
 ---
 
 ## Key concepts
 
-### Path-based manifest matching
+### Embedded blocks are detected first
 
-Each manifest entry has a `path` attribute that must match the **tail** of the runtime configFileName Giants reports for the vehicle or placeable. Stock content uses `data/vehicles/...`. Mods use `mods/<FS25_ModFolderName>/...`. Match is case-insensitive but otherwise exact. No fuzzy matching.
+`<slurryPipeSystem>` / `<sprayerPipeSystem>` inside a vehicle or placeable XML are detected
+before any manifest lookup. The manifest is only consulted when no embedded block is present.
+A third-party retexture of a vehicle can ship its own embedded block and get SPS integration
+without affecting other instances of the same base vehicle, and without touching SPS.
 
-The bundled fillPoints.xml location is auto-derived from the manifest path — drop the trailing XML filename, prepend `configs/`, append `fillPoints.xml`. An optional `configFolder` attribute overrides this when needed.
+### Coupler animations come from the shared library
 
-### Embedded `<slurryPipeSystem>` blocks
+Coupler clamp and valve animations are defined in the SPS-bundled
+`configs/couplerAnimations.xml`. A coupling references an existing animation by integer `id`
+(`connectorAnimation` / `valveAnimation`), and SPS resolves that animation's named part nodes
+**under the coupling's mount node** and drives them. To use an animation you name your
+clamp/valve sub-objects to match the part names that id expects (the file lists them); to add
+a genuinely new animation you would extend that library, which is an SPS-side change.
 
-Detected first, before any manifest lookup. A modder shipping their own vehicle/placeable adds the block inside their XML and SPS picks it up automatically. The manifest is only consulted when no embedded block is present. This means a third-party retexture of (say) kaweco profi2 can ship its own embedded block and override SPS's stock support for that file's instance, without affecting other instances of the same vehicle.
+### Path-based manifest matching (internal)
 
-### Per-vehicle animation libraries
-
-Each registered vehicle or placeable has its own animation library. For bundled content this is the global SPS-bundled `couplerAnimations.xml`. For embedded content it's parsed from the inline `<couplerAnimations>` block inside the modder's XML. Animation ids are scoped — Modder A's `id="1"` and Modder B's `id="1"` don't collide.
+For the bundled fleet, each manifest entry has a `path` that must match the **tail** of the
+runtime `configFileName` Giants reports (stock = `data/vehicles/...`, mods =
+`mods/<FS25_ModFolderName>/...`). Case-insensitive but otherwise exact — no fuzzy matching.
+The bundled `fillPoints.xml` location is auto-derived from the path (drop the filename,
+prepend `configs/`, append `fillPoints.xml`), overridable with a `configFolder` attribute.
 
 ### Multi-fill-type pipes
 
-Coupling-to-coupling transfers and pipe discharge effects automatically use whatever fill type is actually present in the source. A FRC65 nurse tanker carrying digestate pumped through a pipe chain to a digestate-accepting storage works exactly like the equivalent liquidmanure transfer.
+Coupling-to-coupling transfers and discharge effects use whatever fill type is present in the
+source. A nurse tanker carrying digestate piped to a digestate-accepting store works exactly
+like the liquidmanure equivalent.
 
 ---
 
 ## Compatibility
 
-- **Manual Attach** — load-order-safe integration. SPS detects FS25_manualAttach and routes pipe-related connection-hose checks through MA's API when present.
-- **Real autosave** — confirmed working. SPS save data is preserved across autosaves.
-- **Multiplayer** — server-authoritative state, all valve toggles and connections sync via dedicated events.
+- **Manual Attach** — load-order-safe; SPS detects FS25_manualAttach and routes pipe-related
+  connection-hose checks through its API when present.
+- **Real autosave** — SPS save data is preserved across autosaves.
+- **Multiplayer** — server-authoritative state; valve toggles, connections, pressure, pump
+  and shear-bolt state all sync via dedicated events.
 
 ---
 

@@ -31,6 +31,10 @@ function SPSPumpControlActivatable:getIsActivatable()
     if g_localPlayer == nil then return false end
     if self.node == nil or self.node == 0 or not entityExists(self.node) then return false end
     if g_slurryPipeManager == nil or not g_slurryPipeManager:isRegistered(self.vehicle) then return false end
+    -- AI guard: hide activatable when the vehicle's root is AI-driven.
+    if SlurryPipeSystemOverride ~= nil and SlurryPipeSystemOverride.isAIControlled(self.vehicle) then
+        return false
+    end
     local px, py, pz = getWorldTranslation(g_localPlayer.rootNode)
     local cx, cy, cz = getWorldTranslation(self.node)
     return MathUtil.vector3Length(px - cx, py - cy, pz - cz) <= self.radius

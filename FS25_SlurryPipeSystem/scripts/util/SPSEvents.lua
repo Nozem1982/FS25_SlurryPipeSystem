@@ -114,7 +114,7 @@ function SlurryFlowDirectionEvent:run(connection)
         if g_slurryPipeManager ~= nil then
             local state = g_slurryPipeManager:getVehicleState(self.vehicle)
             if state ~= nil then
-                state.direction = self.direction
+                g_slurryPipeManager:applyDirectionAndPurge(self.vehicle, self.direction)
                 g_slurryPipeManager:updateActionEventTexts(self.vehicle)
             end
         end

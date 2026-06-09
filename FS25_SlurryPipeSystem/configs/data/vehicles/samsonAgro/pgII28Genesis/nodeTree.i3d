@@ -42,36 +42,36 @@
               <TransformGroup name="SPS_pipeCoupler01Arc01" translation="1.5 0 2.5" nodeId="23"/>
               <TransformGroup name="SPS_pipeCoupler01Arc02" translation="-1.5 0 2.5" nodeId="24"/>
             </TransformGroup>
-            <TransformGroup name="inNode" nodeId="43"/>
-            <TransformGroup name="outNode" rotation="0 180 0" nodeId="44"/>
+            <TransformGroup name="inNode" nodeId="25"/>
+            <TransformGroup name="outNode" rotation="0 180 0" nodeId="26"/>
           </TransformGroup>
-          <TransformGroup name="SPS_pipeCoupler02" translation="-1.30453 -0.8927 3.22671" rotation="-180 90 -164.091" nodeId="25">
-            <TransformGroup name="SPS_pipeCoupler02Arcs" translation="-7.26186e-08 0 0" rotation="164.091 0 -180" nodeId="26">
-              <TransformGroup name="SPS_pipeCoupler02Arc01" translation="1.5 1.67697e-06 2.5" rotation="8.54233e-13 0 -1.16786e-05" nodeId="27"/>
-              <TransformGroup name="SPS_pipeCoupler02Arc02" translation="-1.5 2.5034e-06 2.5" nodeId="28"/>
+          <TransformGroup name="SPS_pipeCoupler02" translation="-1.30453 -0.8927 3.22671" rotation="-180 90 -164.091" nodeId="27">
+            <TransformGroup name="SPS_pipeCoupler02Arcs" translation="-7.26186e-08 0 0" rotation="164.091 0 -180" nodeId="28">
+              <TransformGroup name="SPS_pipeCoupler02Arc01" translation="1.5 1.67697e-06 2.5" rotation="8.54233e-13 0 -1.16786e-05" nodeId="29"/>
+              <TransformGroup name="SPS_pipeCoupler02Arc02" translation="-1.5 2.5034e-06 2.5" nodeId="30"/>
             </TransformGroup>
-            <TransformGroup name="inNode" translation="0.10047 -0.55168 2.30134" rotation="121.361 -1.91852e-07 180" nodeId="45"/>
-            <TransformGroup name="outNode" translation="0.10047 -0.55168 2.30134" rotation="58.6389 9.90793e-06 1.45688e-05" nodeId="46"/>
+            <TransformGroup name="inNode" nodeId="31"/>
+            <TransformGroup name="outNode" rotation="0 180 0" nodeId="32"/>
           </TransformGroup>
         </TransformGroup>
       </TransformGroup>
-      <TransformGroup name="rubberBootPorts" nodeId="29">
-        <TransformGroup name="pgII28Genesis_vis" nodeId="30">
-          <TransformGroup name="SPS_rubberBootLower01" translation="-0.704521 3.4587 -4.447" nodeId="31"/>
-          <TransformGroup name="SPS_rubberBootUpper01" translation="-0.704521 3.89376 -4.44654" nodeId="32"/>
+      <TransformGroup name="rubberBootPorts" nodeId="33">
+        <TransformGroup name="pgII28Genesis_vis" nodeId="34">
+          <TransformGroup name="SPS_rubberBootLower01" translation="-0.704521 3.4587 -4.447" nodeId="35"/>
+          <TransformGroup name="SPS_rubberBootUpper01" translation="-0.704521 3.89376 -4.44654" nodeId="36"/>
         </TransformGroup>
-        <Shape name="dockingStationCol1" translation="-0.704521 3.51135 -4.44654" shapeId="1" nodeId="33" castsShadows="true" receiveShadows="true" nonRenderable="true" materialIds="6"/>
+        <Shape name="dockingStationCol1" translation="-0.704521 3.51135 -4.44654" shapeId="1" nodeId="37" castsShadows="true" receiveShadows="true" nonRenderable="true" materialIds="6"/>
       </TransformGroup>
-      <TransformGroup name="pumpControls" nodeId="34">
-        <TransformGroup name="drawbar" translation="0 1.0964 1.8972" rotation="5.67109 -0 0" nodeId="35">
-          <TransformGroup name="SPS_pumpControl01" translation="1.00314 0.733681 2.51731" rotation="-5.67109 -0 0" nodeId="36"/>
+      <TransformGroup name="outsideControls" nodeId="38">
+        <TransformGroup name="pgII28Genesis_vis" nodeId="39">
+          <TransformGroup name="pumpControl01" translation="0 0.9297 4.61192" nodeId="40"/>
         </TransformGroup>
       </TransformGroup>
-      <TransformGroup name="pipeEffects" nodeId="37">
-        <TransformGroup name="turretSAP2PipeVar02" translation="-1.32977 1.89186 3.85672" rotation="-0.00325074 -0.0032492 0.021616" nodeId="38">
-          <TransformGroup name="effect" translation="-0.145396 -1.06472 0.0602641" rotation="-3.3069 1.33402e-08 -9.39692" nodeId="39">
-            <Shape name="pipeEffect" translation="-0.000407 0 0" rotation="-90 0 180" shapeId="2" clipDistance="100" nodeId="40" castsShadows="true" receiveShadows="true" materialIds="5"/>
-            <Shape name="pipeEffectSmoke" translation="1.13457e-07 -3.25029 0" rotation="0 0 2e-06" shapeId="3" visibility="false" clipDistance="100" nodeId="41" castsShadows="true" receiveShadows="true" materialIds="5"/>
+      <TransformGroup name="pipeEffects" nodeId="41">
+        <TransformGroup name="turretSAP2PipeVar02" translation="-1.32977 1.89186 3.85672" rotation="-0.00325074 -0.0032492 0.021616" nodeId="42">
+          <TransformGroup name="effect" translation="-0.145396 -1.06472 0.0602641" rotation="-3.3069 1.33402e-08 -9.39692" nodeId="43">
+            <Shape name="pipeEffect" translation="-0.000407 0 0" rotation="-90 0 180" shapeId="2" clipDistance="100" nodeId="44" castsShadows="true" receiveShadows="true" materialIds="5"/>
+            <Shape name="pipeEffectSmoke" translation="1.13457e-07 -3.25029 0" rotation="0 0 2e-06" shapeId="3" visibility="false" clipDistance="100" nodeId="45" castsShadows="true" receiveShadows="true" materialIds="5"/>
           </TransformGroup>
         </TransformGroup>
       </TransformGroup>

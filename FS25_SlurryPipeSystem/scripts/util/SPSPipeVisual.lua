@@ -151,6 +151,20 @@ function SPSPipeVisual:createPipe(nodeA, nodeB, startConnectorType, endConnector
         _hasLogged      = false,
     }
 
+    -- [SPS TRACE] log the nodes this pipe is being built on, BEFORE linking
+    local function traceN(label, n)
+        if n == nil or n == 0 or not entityExists(n) then
+            --print("[SPS TRACE]   createPipe " .. label .. " = nil/invalid"); return
+        end
+        local x, y, z = getWorldTranslation(n)
+        local rx, ry, rz = getWorldRotation(n)
+        --print(string.format("[SPS TRACE]   createPipe %s id=%s name='%s' pos=(%.3f,%.3f,%.3f) rotY=%.1fdeg",
+            --label, tostring(n), tostring(getName(n)), x or 0, y or 0, z or 0, math.deg(ry or 0)))
+    end
+    --print("[SPS TRACE] ===== createPipe =====")
+    traceN("nodeA(pipe START -> pipeRoot)", nodeA)
+    traceN("nodeB(pipe END   -> endConnectors)", nodeB)
+
     -- Link pipeRoot to nodeA in local space — pipe start follows source coupler.
     link(nodeA, pipeRoot)
     setTranslation(pipeRoot, 0, 0, 0)
@@ -160,6 +174,21 @@ function SPSPipeVisual:createPipe(nodeA, nodeB, startConnectorType, endConnector
     link(nodeB, endConnectors)
     setTranslation(endConnectors, 0, 0, 0)
     setRotation(endConnectors, 0, 0, 0)
+
+    -- [SPS TRACE] resulting world orientation of each pipe end after snapping.
+    -- The -Z of each end is the bezier tangent direction; this is what determines
+    -- which way the connector "faces".
+    do
+        local function traceDir(label, n)
+            if n == nil or n == 0 or not entityExists(n) then return end
+            local dx, dy, dz = localDirectionToWorld(n, 0, 0, -1)
+            local rx, ry, rz = getWorldRotation(n)
+            --print(string.format("[SPS TRACE]   createPipe %s -Z dir=(%.2f,%.2f,%.2f) rotY=%.1fdeg",
+                --label, dx or 0, dy or 0, dz or 0, math.deg(ry or 0)))
+        end
+        traceDir("pipeRoot(START) after snap", pipeRoot)
+        traceDir("endConnectors(END) after snap", endConnectors)
+    end
 
     self:updatePipe(inst)
     return inst

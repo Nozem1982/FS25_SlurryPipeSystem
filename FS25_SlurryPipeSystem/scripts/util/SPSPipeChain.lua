@@ -73,7 +73,7 @@ function SPSPipeChain:startLaying(sx, sy, sz, sry, localStartNode)
     end
 
     self.liveSegment = seg
-    print("[SPS] SPSPipeChain: started laying")
+    --print("[SPS] SPSPipeChain: started laying")
 end
 
 -- ---------------------------------------------------------------------------
@@ -127,7 +127,7 @@ function SPSPipeChain:lockLivePipe()
             }
             seg.chainStartCoupling = startCoupling
             table.insert(g_slurryPipeManager.chainTerminusEntries, startCoupling)
-            print("[SPS] lockLivePipe: chain start detection coupling registered on detNode01")
+           -- print("[SPS] lockLivePipe: chain start detection coupling registered on detNode01")
 
             -- Vehicle anchor: auto-connect bez pipe between vehicle coupler and chain start.
             -- The anchor coupling is a vehicle coupling if it has no placeable.
@@ -142,7 +142,7 @@ function SPSPipeChain:lockLivePipe()
                         vehicle, nil,
                         SlurryPipeConnectEvent.TARGET_TYPE_PLACEABLE,
                         self.anchorCoupling.id, startCoupling.id)
-                    print("[SPS] lockLivePipe: auto-connected bez from vehicle coupler to chain start")
+                    --print("[SPS] lockLivePipe: auto-connected bez from vehicle coupler to chain start")
                 end
             elseif self.anchorCoupling.placeable ~= nil then
                 -- Placeable anchor: do NOT mark the anchor isConnected (would break the
@@ -153,13 +153,13 @@ function SPSPipeChain:lockLivePipe()
                 startCoupling.isConnected              = true
                 startCoupling.connectedPartnerCoupling = self.anchorCoupling
                 startCoupling.connectedTarget          = self.anchorCoupling.placeable
-                print("[SPS] lockLivePipe: linked chain start to placeable anchor for valve propagation")
+                --print("[SPS] lockLivePipe: linked chain start to placeable anchor for valve propagation")
             end
         end
     elseif #self.segments == 1 and self.chainStartCoupling ~= nil then
         -- Chain start coupling already exists from finalizePlacement
         seg.chainStartCoupling = self.chainStartCoupling
-        print("[SPS] lockLivePipe: using existing chain start coupling from placement")
+        --print("[SPS] lockLivePipe: using existing chain start coupling from placement")
     end
 
     -- Terrain clamp: run once at lock time so the pipe drapes over ground
@@ -773,11 +773,20 @@ function SPSPipeChain:getSaveData()
         localStart        = self.localStart == true,
         segments          = {},
     }
-    if self.anchorCoupling.mountNode ~= nil and self.anchorCoupling.mountNode ~= 0 then
+    if self.anchorCoupling ~= nil
+    and self.anchorCoupling.mountNode ~= nil and self.anchorCoupling.mountNode ~= 0 then
         if entityExists == nil or entityExists(self.anchorCoupling.mountNode) then
             data.anchorX, data.anchorY, data.anchorZ =
                 getWorldTranslation(self.anchorCoupling.mountNode)
         end
+    elseif self.anchorX ~= nil then
+        -- Free-standing chain (bez was disconnected and binding freed). Use the
+        -- world position cached by SlurryPipeManager:applyDisconnect so the chain
+        -- still saves correctly as a world entity.
+        data.anchorX, data.anchorY, data.anchorZ = self.anchorX, self.anchorY, self.anchorZ
+        print(string.format(
+            "[SPS] SPSPipeChain:getSaveData using cached anchor (%.2f,%.2f,%.2f) — chain is free-standing",
+            data.anchorX, data.anchorY, data.anchorZ))
     end
     -- Save pipeRoot of first segment so vehicle chains restore from the correct start position.
     -- Placeable-local chains do not use this on reload; they relink segment 1 to the
@@ -906,7 +915,7 @@ function SPSPipeChain:restoreFromSaveData(data)
     if data.hasDockingStation then
         self:_restoreDockingStation(data)
     end
-    print("[SPS] SPSPipeChain: restored " .. #self.segments .. " segments")
+--    print("[SPS] SPSPipeChain: restored " .. #self.segments .. " segments")
 end
 
 function SPSPipeChain:_restoreDockingStation(data)

@@ -37,25 +37,47 @@
               <TransformGroup name="SPS_pipeCoupler01Arc01" translation="1.5 0 2.5" nodeId="19"/>
               <TransformGroup name="SPS_pipeCoupler01Arc02" translation="-1.5 0 2.5" nodeId="20"/>
             </TransformGroup>
-            <TransformGroup name="inNode" nodeId="31"/>
-            <TransformGroup name="outNode" rotation="0 180 0" nodeId="32"/>
+            <TransformGroup name="inNode" nodeId="21"/>
+            <TransformGroup name="outNode" rotation="0 180 0" nodeId="22"/>
           </TransformGroup>
-          <TransformGroup name="SPS_pipeCoupler02" translation="-1.11237 1.13796 1.69207" rotation="-15.909 90 0" nodeId="21">
-            <TransformGroup name="SPS_pipeCoupler02Arcs" translation="-7.26186e-08 0 0" rotation="164.091 0 -180" nodeId="22">
-              <TransformGroup name="SPS_pipeCoupler02Arc01" translation="1.5 1.67697e-06 2.5" rotation="8.54233e-13 0 -1.16786e-05" nodeId="23"/>
-              <TransformGroup name="SPS_pipeCoupler02Arc02" translation="-1.5 2.5034e-06 2.5" nodeId="24"/>
+          <TransformGroup name="SPS_pipeCoupler02" translation="-1.11237 1.13796 1.69207" rotation="-15.909 90 0" nodeId="23">
+            <TransformGroup name="SPS_pipeCoupler02Arcs" translation="-7.26186e-08 0 0" rotation="164.091 0 -180" nodeId="24">
+              <TransformGroup name="SPS_pipeCoupler02Arc01" translation="1.5 1.67697e-06 2.5" rotation="8.54233e-13 0 -1.16786e-05" nodeId="25"/>
+              <TransformGroup name="SPS_pipeCoupler02Arc02" translation="-1.5 2.5034e-06 2.5" nodeId="26"/>
             </TransformGroup>
-            <TransformGroup name="inNode" translation="1.1928 -0.537351 1.95793" rotation="124.805 9.63421e-06 180" nodeId="33"/>
-            <TransformGroup name="outNode" translation="1.1928 -0.537351 1.95793" rotation="55.1945 1.02211e-06 1.25833e-05" nodeId="34"/>
+            <TransformGroup name="inNode" nodeId="27"/>
+            <TransformGroup name="outNode" rotation="0 180 1.25833e-05" nodeId="28"/>
           </TransformGroup>
         </TransformGroup>
       </TransformGroup>
-      <TransformGroup name="pipeEffects" nodeId="25">
-        <TransformGroup name="BrasOption1" translation="1.13891 1.38565 1.74998" nodeId="26">
-          <TransformGroup name="effect" translation="0.00196629 -1.0419 -0.00252661" nodeId="27">
-            <Shape name="pipeEffect" translation="-0.000407 -3.08981e-10 0.00353433" rotation="-90 0 180" shapeId="1" clipDistance="100" nodeId="28" castsShadows="true" receiveShadows="true" materialIds="5"/>
-            <Shape name="pipeEffectSmoke" translation="1.13457e-07 -3.25029 0" rotation="0 0 2e-06" shapeId="2" visibility="false" clipDistance="100" nodeId="29" castsShadows="true" receiveShadows="true" materialIds="5"/>
+      <TransformGroup name="pipeEffects" nodeId="29">
+        <TransformGroup name="BrasOption1" translation="1.13891 1.38565 1.74998" nodeId="30">
+          <TransformGroup name="effect" translation="0.00196629 -1.0419 -0.00252661" nodeId="31">
+            <Shape name="pipeEffect" translation="-0.000407 -3.08981e-10 0.00353433" rotation="-90 0 180" shapeId="1" clipDistance="100" nodeId="32" castsShadows="true" receiveShadows="true" materialIds="5"/>
+            <Shape name="pipeEffectSmoke" translation="1.13457e-07 -3.25029 0" rotation="0 0 2e-06" shapeId="2" visibility="false" clipDistance="100" nodeId="33" castsShadows="true" receiveShadows="true" materialIds="5"/>
           </TransformGroup>
+        </TransformGroup>
+      </TransformGroup>
+      <TransformGroup name="blockageNodes" nodeId="34">
+        <TransformGroup name="Cobra_vis" translation="-7.98368e-08 0 0" rotation="0 1.50269e-05 0" nodeId="35">
+          <TransformGroup name="SPS_blockageNodeSplashPlate" translation="-0.000149944 1.11666 -3.73693" rotation="-3.4151e-06 -0 0" nodeId="36"/>
+        </TransformGroup>
+      </TransformGroup>
+      <TransformGroup name="workAreas" nodeId="37">
+        <TransformGroup name="workArea01" nodeId="38">
+          <TransformGroup name="workAreaStart" translation="0 0.202855 -4.91465" nodeId="39"/>
+          <TransformGroup name="workAreaWidth" translation="-6 0.202855 -7.91465" nodeId="40"/>
+          <TransformGroup name="workAreaHeight" translation="6 0.202855 -7.91465" nodeId="41"/>
+        </TransformGroup>
+        <TransformGroup name="workArea02" translation="-0.00066904 1.51104 -3.14927" rotation="0 -1.70755e-06 0" nodeId="42">
+          <TransformGroup name="workAreaStart02" translation="0.202501 -1.43145 -0.560435" nodeId="43"/>
+          <TransformGroup name="workAreaWidth02" translation="-0.197499 -1.43145 -0.560435" nodeId="44"/>
+          <TransformGroup name="workAreaHeight02" translation="0.202501 -1.43145 -7.51614" nodeId="45"/>
+        </TransformGroup>
+      </TransformGroup>
+      <TransformGroup name="outsideControl" nodeId="47">
+        <TransformGroup name="Cobra_vis" nodeId="48">
+          <TransformGroup name="pumpControl01" translation="0 0.897661 2.94761" nodeId="49"/>
         </TransformGroup>
       </TransformGroup>
     </TransformGroup>

@@ -9,8 +9,10 @@
 
     <nodeTree filename="nodeTree.i3d"/>
 
-    <flow litersPerSecond="2000"/>
-
+    <flow fillLitersPerSecond="2000" emptyLitersPerSecond="2000"/>
+	
+	<pump pumpType="openTop"/>    <!-- FRC65 -->
+	
     <fillArms/>
 
     <pipeCouplings>

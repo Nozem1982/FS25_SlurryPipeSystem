@@ -8,6 +8,7 @@
   <Files>
     <File fileId="10" filename="$data/effects/slurry/slurry_diffuse.dds"/>
     <File fileId="5" filename="$data/effects/unload/fadeMask_diffuse.png"/>
+    <File fileId="13" filename="$data/effects/water/whitewater_diffuse.dds"/>
     <File fileId="4" filename="$data/shaders/grainUnloadingShader.xml"/>
     <File fileId="9" filename="$data/shaders/grainUnloadingSmokeShader.xml"/>
     <File fileId="1" filename="$data/shared/defaultArray_diffuse.png"/>
@@ -16,20 +17,25 @@
     <File fileId="7" filename="$data/shared/default_normal.png"/>
     <File fileId="8" filename="$data/shared/default_specular.png"/>
     <File fileId="11" filename="spsSlurryPipeShader.xml"/>
+    <File fileId="14" filename="spsWaterPipeShader.xml"/>
   </Files>
 
 
   <Materials>
-    <Material name="unload_mat" materialId="17" customShaderId="4">
+    <Material name="unload_mat" materialId="116" customShaderId="4">
       <Texture fileId="1"/>
       <Normalmap fileId="2"/>
       <Glossmap fileId="3"/>
     </Material>
-    <Material name="unload_pipeEffect_mat" materialId="61" customShaderId="11" customShaderVariation="pipeEffect">
+    <Material name="unload_pipeEffect_mat" materialId="117" customShaderId="11" customShaderVariation="pipeEffect">
       <Texture fileId="10"/>
       <Normalmap fileId="5"/>
     </Material>
-    <Material name="unloadSmoke_mat" materialId="18" alphaBlending="true" customShaderId="9">
+    <Material name="unload_waterPipeEffect_mat" materialId="118" customShaderId="14" customShaderVariation="pipeEffect">
+      <Texture fileId="13"/>
+      <Normalmap fileId="5"/>
+    </Material>
+    <Material name="unloadSmoke_mat" materialId="119" alphaBlending="true" customShaderId="9">
       <Texture fileId="1"/>
       <Normalmap fileId="7"/>
       <Glossmap fileId="8"/>
@@ -41,22 +47,27 @@
   </Shapes>
 
   <Scene>
-    <Shape name="unload_materialHolder" shapeId="1" clipDistance="10" nodeId="24" castsShadows="true" receiveShadows="true" materialHolder="true" materialIds="17"/>
-    <Shape name="unloadSmoke_materialHolder" shapeId="2" clipDistance="10" nodeId="25" castsShadows="true" receiveShadows="true" materialHolder="true" materialIds="18"/>
-    <Shape name="unloadPipe_materialHolder" shapeId="1" clipDistance="10" nodeId="26" castsShadows="true" receiveShadows="true" materialHolder="true" materialIds="61"/>
+    <Shape name="unload_materialHolder" shapeId="1" clipDistance="10" nodeId="123" castsShadows="true" receiveShadows="true" materialHolder="true" materialIds="116"/>
+    <Shape name="unloadSmoke_materialHolder" shapeId="2" clipDistance="10" nodeId="124" castsShadows="true" receiveShadows="true" materialHolder="true" materialIds="119"/>
+    <Shape name="unloadPipe_materialHolder" shapeId="1" clipDistance="10" nodeId="125" castsShadows="true" receiveShadows="true" materialHolder="true" materialIds="117"/>
+    <Shape name="unloadWaterPipe_materialHolder " shapeId="1" clipDistance="10" nodeId="126" castsShadows="true" receiveShadows="true" materialHolder="true" materialIds="118"/>
   </Scene>
 
   <UserAttributes>
-    <UserAttribute nodeId="24">
+    <UserAttribute nodeId="123">
       <Attribute name="materialName" type="string" value="unloading"/>
       <Attribute name="onCreate" type="scriptCallback" value="MaterialUtil.onCreateBaseMaterial"/>
     </UserAttribute>
-    <UserAttribute nodeId="25">
+    <UserAttribute nodeId="124">
       <Attribute name="materialName" type="string" value="unloadingSmoke"/>
       <Attribute name="onCreate" type="scriptCallback" value="MaterialUtil.onCreateBaseMaterial"/>
     </UserAttribute>
-    <UserAttribute nodeId="26">
-      <Attribute name="materialName" type="string" value="pipe"/>
+    <UserAttribute nodeId="125">
+      <Attribute name="materialName" type="string" value="slurryPipe"/>
+      <Attribute name="onCreate" type="scriptCallback" value="MaterialUtil.onCreateBaseMaterial"/>
+    </UserAttribute>
+    <UserAttribute nodeId="126">
+      <Attribute name="materialName" type="string" value="waterPipe"/>
       <Attribute name="onCreate" type="scriptCallback" value="MaterialUtil.onCreateBaseMaterial"/>
     </UserAttribute>
   </UserAttributes>

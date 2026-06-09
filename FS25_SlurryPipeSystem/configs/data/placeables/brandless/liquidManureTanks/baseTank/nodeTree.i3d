@@ -6,6 +6,8 @@
   </Asset>
 
   <Files>
+    <File fileId="31" filename="$data/fillPlanes/liquidManure_normal.dds"/>
+    <File fileId="32" filename="$data/fillPlanes/liquidManure_specular.dds"/>
     <File fileId="25" filename="$data/placeables/brandless/liquidManureTanks/shared/slurryPitPlatform_diffuse.png"/>
     <File fileId="26" filename="$data/placeables/brandless/liquidManureTanks/shared/slurryPitPlatform_normal.png"/>
     <File fileId="17" filename="$data/placeables/brandless/liquidManureTanks/shared/slurryPitProps_diffuse.png"/>
@@ -27,15 +29,21 @@
     <File fileId="15" filename="$data/shared/detailLibrary/nonMetallic/rubber/rubber_normal.dds"/>
     <File fileId="14" filename="$data/shared/detailLibrary/nonMetallic/rubber/rubber_specular.dds"/>
     <File fileId="1" filename="$data/shared/white_diffuse.dds"/>
+    <File fileId="30" filename="../shared/liquidManure_diffuse.dds"/>
   </Files>
 
 
   <Materials>
-    <Material name="assetLibraryDecals_mat" materialId="5" specularColor="0.501961 1 0.501961">
+    <Material name="assetLibraryDecals_mat" materialId="289" specularColor="0.501961 1 0.501961">
       <Texture fileId="22"/>
       <Normalmap fileId="23"/>
     </Material>
-    <Material name="hose_mat" materialId="6" customShaderId="4">
+    <Material name="crust_mat" materialId="477">
+      <Texture fileId="30"/>
+      <Normalmap fileId="31"/>
+      <Glossmap fileId="32"/>
+    </Material>
+    <Material name="hose_mat" materialId="290" customShaderId="4">
       <Texture fileId="1"/>
       <Normalmap fileId="12"/>
       <Glossmap fileId="13"/>
@@ -44,7 +52,9 @@
       <Custommap name="detailDiffuse" fileId="16"/>
       <CustomParameter name="colorScale" value="0 0.05 0"/>
     </Material>
-    <Material name="silverScratched_mat" materialId="7" customShaderId="4">
+    <Material name="lambert1" materialId="291" diffuseColor="0.501961 0.501961 0.501961 1" specularColor="0.501961 1 0">
+    </Material>
+    <Material name="silverScratched_mat" materialId="293" customShaderId="4">
       <Texture fileId="1"/>
       <Normalmap fileId="2"/>
       <Glossmap fileId="3"/>
@@ -52,12 +62,12 @@
       <Custommap name="detailNormal" fileId="6"/>
       <Custommap name="detailDiffuse" fileId="7"/>
     </Material>
-    <Material name="slurryPitPlatform_mat" materialId="8" customShaderId="20">
+    <Material name="slurryPitPlatform_mat" materialId="294" customShaderId="20">
       <Texture fileId="25"/>
       <Normalmap fileId="26"/>
       <Glossmap fileId="27"/>
     </Material>
-    <Material name="slurryPitProps_mat" materialId="9" customShaderId="20">
+    <Material name="slurryPitProps_mat" materialId="295" customShaderId="20">
       <Texture fileId="17"/>
       <Normalmap fileId="18"/>
       <Glossmap fileId="19"/>
@@ -69,26 +79,34 @@
   </Shapes>
 
   <Scene>
-    <TransformGroup name="SPS_storage" nodeId="16">
-      <TransformGroup name="pipeCouplers" nodeId="17">
-        <TransformGroup name="storage" nodeId="18">
-          <TransformGroup name="SPS_pipeCoupler01" translation="-9.26196 0.950649 -0.359951" rotation="0 90 0" nodeId="19">
-            <TransformGroup name="SPS_pipeCoupler01Arcs" translation="0 0 8.5607e-07" rotation="180 1.86693e-05 180" nodeId="20">
-              <TransformGroup name="SPS_pipeCoupler01Arc01" translation="-1.5 0 2.5" nodeId="21"/>
-              <TransformGroup name="SPS_pipeCoupler01Arc02" translation="1.5 0 2.5" nodeId="22"/>
+    <TransformGroup name="SPS_storage" nodeId="304">
+      <TransformGroup name="pipeCouplers" nodeId="305">
+        <TransformGroup name="storage" nodeId="306">
+          <TransformGroup name="SPS_pipeCoupler01" translation="-9.26196 0.950649 -0.359951" rotation="0 90 0" nodeId="307">
+            <TransformGroup name="SPS_pipeCoupler01Arcs" translation="0 0 8.5607e-07" rotation="180 1.86693e-05 180" nodeId="308">
+              <TransformGroup name="SPS_pipeCoupler01Arc01" translation="-1.5 0 2.5" nodeId="309"/>
+              <TransformGroup name="SPS_pipeCoupler01Arc02" translation="1.5 0 2.5" nodeId="310"/>
             </TransformGroup>
-            <Shape name="slurryHoseConnetorMale01" translation="-2.62728 -0.164293 60.3558" rotation="180 1.86693e-05 180" shapeId="1" clipDistance="150" nodeId="23" castsShadows="false" receiveShadows="false" materialIds="7">
-              <Shape name="hose" shapeId="2" clipDistance="150" nodeId="24" castsShadows="true" receiveShadows="true" materialIds="6"/>
+            <Shape name="slurryHoseConnetorMale01" translation="-2.62728 -0.164293 60.3558" rotation="180 1.86693e-05 180" shapeId="1" clipDistance="150" nodeId="311" castsShadows="false" receiveShadows="false" materialIds="293">
+              <Shape name="hose" shapeId="2" clipDistance="150" nodeId="312" castsShadows="true" receiveShadows="true" materialIds="290"/>
             </Shape>
-            <Shape name="slurryPit_propsSwapped" translation="-0.359952 -0.950649 9.26196" rotation="-0 -90 0" shapeId="3" clipDistance="300" nodeId="25" castsShadows="true" receiveShadows="true" materialIds="9">
-              <Shape name="slurryPit_screws" shapeId="4" clipDistance="300" nodeId="26" castsShadows="true" receiveShadows="true" materialIds="5"/>
-              <Shape name="slurryPit_platform" shapeId="5" clipDistance="300" nodeId="27" castsShadows="true" receiveShadows="true" materialIds="8"/>
+            <Shape name="slurryPit_propsSwapped" translation="-0.359952 -0.950649 9.26196" rotation="-0 -90 0" shapeId="3" clipDistance="300" nodeId="313" castsShadows="true" receiveShadows="true" materialIds="295">
+              <Shape name="slurryPit_screws" shapeId="4" clipDistance="300" nodeId="314" castsShadows="true" receiveShadows="true" materialIds="289"/>
+              <Shape name="slurryPit_platform" shapeId="5" clipDistance="300" nodeId="315" castsShadows="true" receiveShadows="true" materialIds="294"/>
             </Shape>
-            <TransformGroup name="inNode" nodeId="28"/>
-            <TransformGroup name="outNode" rotation="-0 180 0" nodeId="29"/>
+            <Shape name="col" translation="-0.359952 -0.950649 9.26196" rotation="-0 -90 0" shapeId="6" static="true" collisionFilterGroup="0x1034" collisionFilterMask="0xfffffbff" nodeId="316" castsShadows="true" receiveShadows="true" nonRenderable="true" materialIds="291"/>
+            <TransformGroup name="inNode" nodeId="317"/>
+            <TransformGroup name="outNode" rotation="-0 180 0" nodeId="318"/>
           </TransformGroup>
-          <TransformGroup name="slurryPlaneCentre" nodeId="30"/>
-          <TransformGroup name="slurryPlaneEdge" translation="-9 0 0" nodeId="31"/>
+          <TransformGroup name="slurryPlaneCentre" nodeId="319"/>
+          <TransformGroup name="slurryPlaneEdge" translation="-9 0 0" nodeId="320"/>
+        </TransformGroup>
+      </TransformGroup>
+      <TransformGroup name="crustPlane" nodeId="321">
+        <TransformGroup name="slurryPit_fillPlane" nodeId="322">
+          <Shape name="crust_fillPlane" shapeId="7" clipDistance="200" nodeId="336" castsShadows="true" receiveShadows="true" materialIds="477">
+            <Shape name="crustFoliage" shapeId="8" nodeId="454" castsShadows="true" receiveShadows="true" nonRenderable="true" materialIds="291"/>
+          </Shape>
         </TransformGroup>
       </TransformGroup>
     </TransformGroup>
