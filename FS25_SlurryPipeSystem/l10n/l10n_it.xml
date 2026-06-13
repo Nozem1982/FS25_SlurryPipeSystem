@@ -156,7 +156,7 @@
         <text name="warning_spsBlockageMacerator" text="Maceratore intasato - spandiletame fermo. Libera per continuare." />
         <text name="warning_spsBlockageSection" text="Sezione intasata: %s. Libera per ripristinare quella striscia." />
         <!-- Shear bolt -->
-        <text name="input_spsRepairShearBolt" text="Sostituisci bullone di sicurezza [tieni premuto R]" />
+        <text name="input_SPS_REPAIR_SHEARBOLT" text="Sostituisci bullone di sicurezza [tieni premuto R]" />
         <text name="action_spsRepairShearBolt" text="Sostituisci bullone di sicurezza [tieni premuto R]" />
         <text name="action_spsRepairShearBoltWait" text="Sostituisci bullone di sicurezza (spegni PTO &amp; motore)" />
         <text name="warning_spsShearBoltSnapped" text="Bullone di sicurezza PTO rotto — pompa scollegata, sostituzione necessaria" />

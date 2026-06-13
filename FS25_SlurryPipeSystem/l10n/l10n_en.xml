@@ -154,7 +154,7 @@
 		<text name="warning_spsBlockageSection"   		text="Section blocked: %s. Clear to restore that strip." />
 		
 		<!-- Shear bolt -->
-		<text name="input_spsRepairShearBolt" 			text="Replace shear bolt [hold R]"/>
+		<text name="input_SPS_REPAIR_SHEARBOLT" 		text="Replace shear bolt [hold R]"/>
 		<text name="action_spsRepairShearBolt" 			text="Replace shear bolt [hold R]"/>
 		<text name="action_spsRepairShearBoltWait" 		text="Replace shear bolt (turn off PTO &amp; engine)"/>
 		<text name="warning_spsShearBoltSnapped" 		text="PTO shear bolt snapped — pump disconnected, replacement required"/>

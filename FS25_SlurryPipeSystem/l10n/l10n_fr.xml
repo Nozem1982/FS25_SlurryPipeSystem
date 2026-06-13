@@ -156,7 +156,7 @@
         <text name="warning_spsBlockageMacerator" text="Broyeur bouché - épandeur arrêté. Dégagez pour continuer." />
         <text name="warning_spsBlockageSection" text="Tronçon bouché : %s. Dégagez pour rétablir ce tronçon." />
         <!-- Shear bolt -->
-        <text name="input_spsRepairShearBolt" text="Remplacer le boulon de cisaillement [maintenir R]" />
+        <text name="input_SPS_REPAIR_SHEARBOLT" text="Remplacer le boulon de cisaillement [maintenir R]" />
         <text name="action_spsRepairShearBolt" text="Remplacer le boulon de cisaillement [maintenir R]" />
         <text name="action_spsRepairShearBoltWait" text="Remplacer le boulon de cisaillement (couper la PdF &amp; le moteur)" />
         <text name="warning_spsShearBoltSnapped" text="Boulon de cisaillement de la PdF cassé — pompe déconnectée, remplacement requis" />

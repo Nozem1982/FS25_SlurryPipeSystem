@@ -56,10 +56,10 @@ SlurryPipeManager.DM_FRESH                  = 0.06  -- dry-matter fraction shown
 SlurryPipeManager.DM_JAMMED                 = 0.15  -- dry-matter fraction shown as 100% (un-pumpable even fully mixed)
 SlurryPipeManager.DM_REMOVAL_LIQUID_BIAS    = 1.6   -- liquid leaves at this multiple of its share (>1 = liquid pulled first)
 SlurryPipeManager.WARNING_RANGE             = 15    -- metres: blinking flow warnings only show when in-cab or this close on foot
-SlurryPipeManager.BLOCKAGE_OUTLET_CHANCE    = 0.04
-SlurryPipeManager.BLOCKAGE_MACERATOR_CHANCE = 0.01
-SlurryPipeManager.BLOCKAGE_ROLL_INTERVAL    = 2000
-SlurryPipeManager.BLOCKAGE_CLEAR_RADIUS     = 0.5
+SlurryPipeManager.BLOCKAGE_OUTLET_CHANCE    = 0.0
+SlurryPipeManager.BLOCKAGE_MACERATOR_CHANCE = 0.005
+SlurryPipeManager.BLOCKAGE_ROLL_INTERVAL    = 6000
+SlurryPipeManager.BLOCKAGE_CLEAR_RADIUS     = 0.75
 
 -- Module-level node search — finds all nodes named 'name' under root.
 -- Used by registerVehicle and registerPlaceable.
@@ -273,7 +273,6 @@ function SlurryPipeManager:loadPipeColors(modDirectory)
     local path = modDirectory .. "configs/spsColors.xml"
     local xmlFile = XMLFile.load("spsColors", path)
     if xmlFile == nil then
-        print("[SPS] loadPipeColors: could not load " .. path)
         return
     end
     self.pipeColors = {}
@@ -295,14 +294,12 @@ function SlurryPipeManager:loadPipeColors(modDirectory)
         self.currentPipeColor = { r = c.r, g = c.g, b = c.b }
         self.currentPipeColorIndex = 1
     end
-    print("[SPS] loadPipeColors: loaded " .. #self.pipeColors .. " colours")
     for i, c in ipairs(self.pipeColors) do
     end
 end
 
 function SlurryPipeManager:setCurrentPipeColor(index)
     if self.pipeColors == nil or #self.pipeColors == 0 then
-        print("[SPS] setCurrentPipeColor: pipeColors empty, ignoring index=" .. tostring(index))
         return
     end
     index = math.clamp(index, 1, #self.pipeColors)
@@ -486,16 +483,10 @@ function SlurryPipeManager:registerVehicle(vehicle)
         resolvedPumpType = "openTop"
     else
         resolvedPumpType = "vacuum"
-        print("[SPS] WARNING: no <pump pumpType=\"...\"/> in config for "
-            .. tostring(vehicle ~= nil and vehicle.configFileName or config.xmlFilePath)
-            .. " — defaulting to \"vacuum\". Add a pumpType tag (vacuum/HVP/conduit/openTop).")
     end
     -- Normalise / validate.
     if resolvedPumpType ~= "vacuum" and resolvedPumpType ~= "HVP"
        and resolvedPumpType ~= "conduit" and resolvedPumpType ~= "openTop" then
-        print("[SPS] WARNING: unknown pumpType \"" .. resolvedPumpType .. "\" in "
-            .. tostring(vehicle ~= nil and vehicle.configFileName or config.xmlFilePath)
-            .. " — defaulting to \"vacuum\".")
         resolvedPumpType = "vacuum"
     end
     entry.pumpType = resolvedPumpType
@@ -660,14 +651,12 @@ function SlurryPipeManager:registerVehicle(vehicle)
         if tipType == SPS_TIP_TYPE_RUBBER_BOOT then
             armEntry.tipNode = findLinkedNode(xmlFile:getString(armKey .. "#tipNodeName"))
             if armEntry.tipNode == nil then
-                print("[SPS] fillArm id=" .. armId .. " RUBBER_BOOT tipNode not found, skipping")
                 armIndex = armIndex + 1
                 continue
             end
         elseif tipType == SPS_TIP_TYPE_OPEN_PIT then
             armEntry.centreNode = findLinkedNode(xmlFile:getString(armKey .. "#centreNodeName"))
             if armEntry.centreNode == nil then
-                print("[SPS] fillArm id=" .. armId .. " OPEN_PIT centreNode not found, skipping")
                 armIndex = armIndex + 1
                 continue
             end
@@ -675,7 +664,6 @@ function SlurryPipeManager:registerVehicle(vehicle)
             armEntry.tipNode    = findLinkedNode(xmlFile:getString(armKey .. "#tipNodeName"))
             armEntry.centreNode = findLinkedNode(xmlFile:getString(armKey .. "#centreNodeName"))
             if armEntry.tipNode == nil and armEntry.centreNode == nil then
-                print("[SPS] fillArm id=" .. armId .. " RUBBER_BOOT_PIT no usable nodes, skipping")
                 armIndex = armIndex + 1
                 continue
             end
@@ -788,7 +776,6 @@ function SlurryPipeManager:registerVehicle(vehicle)
             entry.pipeEffects = effects
             --print("[SPS] pipeEffects manually built: " .. #effects .. " for " .. tostring(vehicle.configFileName))
         else
-            print("[SPS] pipeEffects: effect/pipeEffectSmoke not found in nodeTree")
         end
     end
 
@@ -870,7 +857,6 @@ function SlurryPipeManager:registerVehicle(vehicle)
             end
             table.insert(entry.couplingEntries, couplingEntry)
         else
-            print("[SPS] pipeCoupling id=" .. tostring(couplingId) .. " mountNode not found, skipping")
         end
         couplingIndex = couplingIndex + 1
     end
@@ -893,13 +879,9 @@ function SlurryPipeManager:registerVehicle(vehicle)
             local bCfgType     = xmlFile:getString(bKey .. "#configType", "workArea")
             local bActiveIndex = getActiveConfigIndex(bCfgType)
             if bActiveIndex ~= nil and not configIndexMatches(bCfgIndexStr, bActiveIndex) then
-                print(string.format("[SPS] blockageNode skip: %s workAreaConfigIndex=%s active=%d (%s)",
-                    tostring(xmlFile:getString(bKey .. "#mountNodeName")), tostring(bCfgIndexStr), bActiveIndex, tostring(bCfgType)))
                 blockageIndex = blockageIndex + 1
                 continue
             end
-            print(string.format("[SPS] blockageNode match: %s workAreaConfigIndex=%s active=%s (%s)",
-                tostring(xmlFile:getString(bKey .. "#mountNodeName")), tostring(bCfgIndexStr), tostring(bActiveIndex), tostring(bCfgType)))
         end
 
         local nodeName = xmlFile:getString(bKey .. "#mountNodeName")
@@ -917,7 +899,6 @@ function SlurryPipeManager:registerVehicle(vehicle)
                 workAreaNodeName  = xmlFile:getString(bKey .. "#workAreaNode"),
             })
         else
-            print("[SPS] blockageNode '" .. tostring(nodeName) .. "' not found, skipping")
         end
         blockageIndex = blockageIndex + 1
     end
@@ -1038,10 +1019,8 @@ function SlurryPipeManager:registerVehicle(vehicle)
                                 --print(string.format("[SPS] section band '%s' built (index %d) startWorld=%.2f %.2f %.2f",
                                 --    tostring(b.workAreaNodeName), band.index, wx, wy, wz))
                             else
-                                print("[SPS] section '" .. tostring(b.workAreaNodeName) .. "' missing workAreaStart/Width/Height child, skipping")
                             end
                         else
-                            print("[SPS] section workAreaNode '" .. tostring(b.workAreaNodeName) .. "' not found, skipping")
                         end
                     end
                 end
@@ -1077,7 +1056,6 @@ function SlurryPipeManager:registerVehicle(vehicle)
             table.insert(entry.rubberBootPortEntries, rbpEntry)
             table.insert(self.rubberBootPortEntries, rbpEntry)
         else
-            print("[SPS] rubberBootPort id=" .. tostring(rbpId) .. " lowerNode or upperNode not found, skipping")
         end
         rbpIndex = rbpIndex + 1
     end
@@ -1093,7 +1071,6 @@ function SlurryPipeManager:registerVehicle(vehicle)
         if pcNode ~= nil then
             table.insert(entry.pumpControlEntries, { id = pcId, node = pcNode, radius = pcRadius, vehicle = vehicle })
         else
-            print("[SPS] pumpControl id=" .. tostring(pcId) .. " node not found, skipping")
         end
         pcIndex = pcIndex + 1
     end
@@ -1228,7 +1205,6 @@ function SlurryPipeManager:registerVehicle(vehicle)
                 AudioGroup.VEHICLE, vehicle.i3dMappings, vehicle)
             if entry.engineLoopSample ~= nil then
             else
-                print("[SPS] engineLoop sound failed to load for " .. tostring(vehicle.configFileName))
             end
         end
     end
@@ -1523,7 +1499,6 @@ function SlurryPipeManager:registerPlaceable(placeable)
             end
             delete(nodeTreeRoot)
         else
-            print("[SPS] registerPlaceable: failed to load nodeTree: " .. tostring(fullPath))
         end
     end
 
@@ -1565,7 +1540,6 @@ function SlurryPipeManager:registerPlaceable(placeable)
                         table.insert(hiddenNodes, found)
                     end
                 else
-                    print("[SPS] registerPlaceable: hideNode '" .. nodeName .. "' not found in " .. tostring(placeable.configFileName))
                 end
             end
         end
@@ -1598,7 +1572,6 @@ function SlurryPipeManager:registerPlaceable(placeable)
                         table.insert(hiddenCollisions, found)
                     end
                 else
-                    print("[SPS] registerPlaceable: hideCollision '" .. nodeName .. "' not found in " .. tostring(placeable.configFileName))
                 end
             end
         end
@@ -1606,11 +1579,6 @@ function SlurryPipeManager:registerPlaceable(placeable)
     end
 
     local fillPlaneNode = xmlFile:getNode(kp .. "slurryPipeSystem.fillPlane#node", nil, placeable.components, placeable.i3dMappings)
-    print("[SPS fillPlane debug] " .. tostring(placeable.configFileName)
-        .. " fillPlaneNode=" .. tostring(fillPlaneNode)
-        .. " components=" .. tostring(placeable.components ~= nil)
-        .. " i3dMappings=" .. tostring(placeable.i3dMappings ~= nil)
-        .. " nodeAttr=" .. tostring(xmlFile:getString(kp .. "slurryPipeSystem.fillPlane#node", "MISSING")))
     local minY          = xmlFile:getFloat(kp .. "slurryPipeSystem.fillPlane#minY", 0)
     local maxY          = xmlFile:getFloat(kp .. "slurryPipeSystem.fillPlane#maxY", 1)
     local fillTypeName  = xmlFile:getString(kp .. "slurryPipeSystem.fillPlane#fillType", "LIQUIDMANURE")
@@ -1633,7 +1601,6 @@ function SlurryPipeManager:registerPlaceable(placeable)
             local radius = math.sqrt((cx - ex) * (cx - ex) + (cz - ez) * (cz - ez))
             planeBounds = { shape = "round", centreNode = centreNode, radius = radius }
         else
-            print("[SPS] registerPlaceable: shape=round but centreNode or edgeNode missing")
         end
     elseif planeShape == "rectangle" then
         local corner1Node = findLinkedNode(xmlFile:getString(kp .. "slurryPipeSystem.fillPlane#corner1NodeName", nil))
@@ -1652,10 +1619,8 @@ function SlurryPipeManager:registerPlaceable(placeable)
                 maxZ       = math.max(lz1, lz2),
             }
         else
-            print("[SPS] registerPlaceable: shape=rectangle but centreNode or corner nodes missing")
         end
     elseif planeShape ~= nil then
-        print("[SPS] registerPlaceable: unknown shape '" .. tostring(planeShape) .. "'")
     end
 
     local sourceEntry = nil
@@ -1721,7 +1686,6 @@ function SlurryPipeManager:registerPlaceable(placeable)
             mountNode = findLinkedNode(mountNodeName)
             arcNode   = nil
             if mountNode == nil then
-                print("[SPS] registerPlaceable: mountNodeName '" .. mountNodeName .. "' not found in linkedNodes, skipping")
                 couplingIndex = couplingIndex + 1
                 continue
             end
@@ -1771,7 +1735,6 @@ function SlurryPipeManager:registerPlaceable(placeable)
                     if n ~= nil then
                         table.insert(undeployedVisibleNodes, n)
                     else
-                        print("[SPS] registerPlaceable: undeployedVisibleNode '" .. nodeName .. "' not found for coupling id=" .. tostring(couplingId))
                     end
                 end
             end
@@ -1927,12 +1890,9 @@ function SlurryPipeManager:registerPlaceable(placeable)
                         g_effectManager:setUpdateDistance({ se }, math.huge)
                         table.insert(effects, se)
                         sc.pipeEffects = effects
-                        print("[SPS] registerPlaceable: inlet effects built for coupling id=" .. tostring(couplingId) .. " on " .. tostring(placeable.configFileName))
                     else
-                        print("[SPS] registerPlaceable: smokeNode '" .. tostring(smokeNodeName) .. "' not found under effect TG for coupling id=" .. tostring(couplingId))
                     end
                 else
-                    print("[SPS] registerPlaceable: effectNode '" .. tostring(effectNodeName) .. "' not found in linkedNodes for coupling id=" .. tostring(couplingId))
                 end
             end
 
@@ -2084,7 +2044,6 @@ end
 function SlurryPipeManager:saveCouplingConnections(savePath)
     local xmlFile = XMLFile.create("spsSave", savePath, "slurryPipeSystem")
     if xmlFile == nil then
-        print("[SPS] saveCouplingConnections: failed to create " .. tostring(savePath))
         return
     end
 
@@ -2124,8 +2083,6 @@ function SlurryPipeManager:saveCouplingConnections(savePath)
     for _, chain in ipairs(self.pipeChains) do
         local data = chain:getSaveData()
         if #data.segments == 0 and not data.hasDockingStation then
-            print("[SPS] saveCouplingConnections: skipping empty chain at anchor ("
-                .. string.format("%.2f,%.2f,%.2f", data.anchorX, data.anchorY, data.anchorZ) .. ")")
         else
             local base = string.format("slurryPipeSystem.chains.chain(%d)", chainSaveIdx)
             xmlFile:setFloat(base .. "#anchorX",           data.anchorX)
@@ -2286,21 +2243,17 @@ function SlurryPipeManager:saveCouplingConnections(savePath)
 
     xmlFile:save()
     xmlFile:delete()
-    print("[SPS] saveCouplingConnections: saved " .. written .. " connections, "
-        .. #self.pipeChains .. " chains, " .. sprayerAnimIdx .. " sprayer animations to " .. tostring(savePath))
 end
 
 -- Called from SPSMod:loadMap after manager is ready.
 -- Populates pendingConnections. Each entry is resolved as couplings register.
 function SlurryPipeManager:loadCouplingConnections(savePath)
     if not fileExists(savePath) then
-        print("[SPS] loadCouplingConnections: no save file at " .. tostring(savePath))
         return
     end
 
     local xmlFile = XMLFile.load("spsSave", savePath)
     if xmlFile == nil then
-        print("[SPS] loadCouplingConnections: failed to load " .. tostring(savePath))
         return
     end
 
@@ -2374,8 +2327,6 @@ function SlurryPipeManager:loadCouplingConnections(savePath)
         end
         -- Skip empty chains (no segments, no docking station) — nothing to restore
         if #chainData.segments == 0 and not chainData.hasDockingStation then
-            print("[SPS] loadCouplingConnections: skipping empty chain at anchor ("
-                .. string.format("%.2f,%.2f,%.2f", chainData.anchorX, chainData.anchorY, chainData.anchorZ) .. ")")
         else
             table.insert(self.pendingChains, chainData)
         end
@@ -2499,12 +2450,6 @@ function SlurryPipeManager:loadCouplingConnections(savePath)
     end
 
     xmlFile:delete()
-    print("[SPS] loadCouplingConnections: loaded " .. #self.pendingConnections
-        .. " connections, " .. #self.pendingChains .. " chains, "
-        .. #self.pendingDeployedCouplings .. " deployed couplings, "
-        .. #self._pendingThickness .. " thickness entries"
-        .. ", " .. animLoadIdx .. " coupler anim entries"
-        .. ", " .. sprayerAnimLoadIdx .. " sprayer anim entries")
 end
 
 -- Applies saved coupler animation time/direction to a registered coupling.
@@ -2563,8 +2508,6 @@ function SlurryPipeManager:_applyPendingSprayerAnimation(vehicle, entry)
                 if vehicle.getAnimationExists ~= nil and vehicle:getAnimationExists(pending.animName) then
                     vehicle:setAnimationTime(pending.animName, pending.animTime, true, false)
                     pending.applied = true
-                    print("[SPS SPR] _applyPendingSprayerAnimation: restored '" .. pending.animName 
-                        .. "' to time " .. string.format("%.2f", pending.animTime))
                     return true
                 end
             end
@@ -2965,9 +2908,6 @@ function SlurryPipeManager:updateAIGate(dt)
 end
 
 function SlurryPipeManager:onAIGateChanged(vehicle, vEntry, aiNow)
-    print("[SPS AI GATE] " .. (aiNow and "AI took control — SPS suspended for "
-                                      or "AI released control — SPS restored for ")
-        .. tostring(vehicle.configFileName))
 
     -- Vanilla FillTrigger: SPS disables it at registration so the player must use
     -- the pipe/arm system to load. AI workers (vanilla / Courseplay / AutoDrive)
@@ -2978,8 +2918,6 @@ function SlurryPipeManager:onAIGateChanged(vehicle, vEntry, aiNow)
     if vehicle.spec_fillTriggerVehicle ~= nil
        and vehicle.spec_fillTriggerVehicle.fillTrigger ~= nil then
         vehicle.spec_fillTriggerVehicle.fillTrigger.isEnabled = aiNow
-        print("[SPS AI GATE]   vanilla fillTrigger " .. (aiNow and "ENABLED (AI loads at stores)"
-                                                               or "disabled (SPS pipe loading)"))
     end
 
     if aiNow and g_server ~= nil then
@@ -2991,17 +2929,14 @@ function SlurryPipeManager:onAIGateChanged(vehicle, vEntry, aiNow)
             if state.valveOpen == true then
                 state.valveOpen = false
                 SlurryFlowStateEvent.sendEvent(vehicle, false)
-                print("[SPS AI GATE]   flow valve closed")
             end
             if state.spreaderValveOpen == true then
                 state.spreaderValveOpen = false
                 SPSSpreaderValveEvent.sendEvent(vehicle, false)
-                print("[SPS AI GATE]   spreader valve closed")
             end
             if state.pumpRunning == true then
                 state.pumpRunning = false
                 SPSSelfPumpStateEvent.sendEvent(vehicle, false)
-                print("[SPS AI GATE]   pump stopped")
             end
         end
         -- Non-spreader pumps run on the vanilla turn-on flag — clear it. The
@@ -3011,7 +2946,6 @@ function SlurryPipeManager:onAIGateChanged(vehicle, vEntry, aiNow)
         if vehicle.getIsTurnedOn ~= nil and vehicle:getIsTurnedOn()
            and vehicle.setIsTurnedOn ~= nil then
             vehicle:setIsTurnedOn(false)
-            print("[SPS AI GATE]   turn-on flag cleared")
         end
         self:updateActionEventTexts(vehicle)
     end
@@ -3027,7 +2961,6 @@ function SlurryPipeManager:onAIGateChanged(vehicle, vEntry, aiNow)
             SpecializationUtil.raiseEvent(v, "onRootVehicleChanged", v.rootVehicle)
         end
     end
-    print("[SPS AI GATE]   onRootVehicleChanged re-raised on chain")
 end
 
 function SlurryPipeManager:getVehicleEntry(vehicle)
@@ -3114,7 +3047,6 @@ function SlurryPipeManager:onActionToggleSpreader(vehicle)
     local state = self:getVehicleState(vehicle)
     if state == nil then return end
     local newOpen = not state.spreaderValveOpen
-    print("[SPS SPREADER] onActionToggleSpreader -> " .. tostring(newOpen) .. " dir=" .. tostring(state.direction))
     -- The spreader can only discharge, so it may only open when the pump is set to
     -- Pressure (DISCHARGE). Pump state is irrelevant — stored pressure drives the
     -- spread. (The fill arm, by contrast, may open in either direction.)
@@ -3122,7 +3054,6 @@ function SlurryPipeManager:onActionToggleSpreader(vehicle)
         if vehicle.isClient then
             g_currentMission:showBlinkingWarning(g_i18n:getText("warning_spsSetToPressure"), 2000)
         end
-        print("[SPS SPREADER] blocked — pump not set to Pressure")
         return
     end
     if g_server ~= nil then
@@ -3281,10 +3212,8 @@ function SlurryPipeManager:togglePump(vehicle)
             SPSSelfPumpStateEvent.sendEvent(vehicle, newPump)
             if newPump then
                 vehicle:setIsTurnedOn(true)
-                print("[SPS PUMP] pump on — setIsTurnedOn(true) for PTO sounds")
             else
                 vehicle:setIsTurnedOn(false)
-                print("[SPS PUMP] pump off — setIsTurnedOn(false) requested; guard/driver keep it on if still discharging")
             end
             self:updateActionEventTexts(vehicle)
         else
@@ -3296,7 +3225,6 @@ function SlurryPipeManager:togglePump(vehicle)
             if warning ~= nil and vehicle.isClient then
                 g_currentMission:showBlinkingWarning(warning, 2000)
             end
-            print("[SPS PUMP] non-spreader pump blocked — getCanBeTurnedOn false")
             return
         end
         --print("[SPS PUMP] non-spreader setIsTurnedOn -> " .. tostring(not vehicle:getIsTurnedOn()))
@@ -3772,7 +3700,6 @@ function SlurryPipeManager:updateSpreaderAnimations(dt)
                     entry._spreadAnimOn = true
                     vehicle:playAnimation(entry.spreaderAnimationName, 1,
                         vehicle:getAnimationTime(entry.spreaderAnimationName), true)
-                    print("[SPS ANIM] spreaderAnimation play (discharging)")
                 elseif not playing then
                     vehicle:playAnimation(entry.spreaderAnimationName, 1,
                         vehicle:getAnimationTime(entry.spreaderAnimationName), true)
@@ -3782,15 +3709,12 @@ function SlurryPipeManager:updateSpreaderAnimations(dt)
                 -- Keep the clip alive through the tail if something stops it externally.
                 if entry._spreadAnimTail == nil then
                     entry._spreadAnimTail = entry.spreaderAnimationStopDelay or 2000
-                    print("[SPS ANIM] spreaderAnimation tail start ("
-                        .. tostring(entry._spreadAnimTail) .. "ms)")
                 end
                 entry._spreadAnimTail = entry._spreadAnimTail - dt
                 if entry._spreadAnimTail <= 0 then
                     entry._spreadAnimTail = nil
                     entry._spreadAnimOn = false
                     vehicle:stopAnimation(entry.spreaderAnimationName, true)
-                    print("[SPS ANIM] spreaderAnimation stop (tail complete)")
                 else
                     local playing = vehicle.getIsAnimationPlaying == nil
                         or vehicle:getIsAnimationPlaying(entry.spreaderAnimationName)
@@ -4202,6 +4126,16 @@ function SlurryPipeManager:findOverlappingCoupler(coupling)
 
     local apexAx, apexAy, apexAz = getWorldTranslation(apexA)
 
+    -- Multiple couplers on the same vehicle/placeable can have overlapping arcs
+    -- (e.g. two store couplers ~0.8m apart with deep arc triangles). Returning the
+    -- first overlap in registration order biases every connection to the lowest id.
+    -- Instead, among all arc-overlapping couplers within range, pick the one whose
+    -- apex is closest to this coupling's apex — that is the coupler the player
+    -- physically aligned with. Category priority is preserved: an overlapping
+    -- vehicle coupler wins over a placeable coupler, which wins over a chain
+    -- terminus (matching the original ordering of these blocks).
+    local bestVc     = nil
+    local bestVcDist = math.huge
     for _, vEntry in ipairs(self.registeredVehicles) do
         for _, vc in ipairs(vEntry.couplingEntries) do
             if vc ~= coupling and not vc.isConnected then
@@ -4217,9 +4151,13 @@ function SlurryPipeManager:findOverlappingCoupler(coupling)
                     local apexB, arc1B, arc2B = self:_getCouplingArcNodes(vc)
                     if apexB ~= nil and entityExists(apexB) then
                         local bx, by, bz = getWorldTranslation(apexB)
-                        if MathUtil.vector3Length(apexAx-bx, apexAy-by, apexAz-bz) <= SPS_MAX_CONNECT_DIST then
+                        local d = MathUtil.vector3Length(apexAx-bx, apexAy-by, apexAz-bz)
+                        if d <= SPS_MAX_CONNECT_DIST then
                             if self:_arcsOverlap(apexA, arc1A, arc2A, apexB, arc1B, arc2B) then
-                                return vc
+                                if d < bestVcDist then
+                                    bestVcDist = d
+                                    bestVc     = vc
+                                end
                             end
                         end
                     end
@@ -4227,7 +4165,10 @@ function SlurryPipeManager:findOverlappingCoupler(coupling)
             end
         end
     end
+    if bestVc ~= nil then return bestVc end
 
+    local bestSc     = nil
+    local bestScDist = math.huge
     for _, pEntry in ipairs(self.registeredPlaceables) do
         if pEntry.storeCouplings ~= nil then
             for _, sc in ipairs(pEntry.storeCouplings) do
@@ -4247,9 +4188,13 @@ function SlurryPipeManager:findOverlappingCoupler(coupling)
                         local apexB, arc1B, arc2B = self:_getCouplingArcNodes(sc)
                         if apexB ~= nil and entityExists(apexB) then
                             local bx, by, bz = getWorldTranslation(apexB)
-                            if MathUtil.vector3Length(apexAx-bx, apexAy-by, apexAz-bz) <= SPS_MAX_CONNECT_DIST then
+                            local d = MathUtil.vector3Length(apexAx-bx, apexAy-by, apexAz-bz)
+                            if d <= SPS_MAX_CONNECT_DIST then
                                 if self:_arcsOverlap(apexA, arc1A, arc2A, apexB, arc1B, arc2B) then
-                                    return sc
+                                    if d < bestScDist then
+                                        bestScDist = d
+                                        bestSc     = sc
+                                    end
                                 end
                             end
                         end
@@ -4258,6 +4203,7 @@ function SlurryPipeManager:findOverlappingCoupler(coupling)
             end
         end
     end
+    if bestSc ~= nil then return bestSc end
 
     -- Chain terminus arcs — laid pipe ends a vehicle can connect to
     -- Pick the closest overlapping terminus within maxPipeLength
@@ -4352,7 +4298,6 @@ function SlurryPipeManager:onCouplerConnect(vehicle, coupling)
 
     local otherCoupling = self:findOverlappingCoupler(coupling)
     if otherCoupling == nil then
-        print("[SPS] onCouplerConnect: no overlapping coupler")
         return
     end
 
@@ -4362,11 +4307,9 @@ function SlurryPipeManager:onCouplerConnect(vehicle, coupling)
 
     -- Both couplers must be free to connect
     if coupling.isConnected then
-        print("[SPS] onCouplerConnect: source coupling already connected")
         return
     end
     if otherCoupling.isConnected then
-        print("[SPS] onCouplerConnect: target coupling already connected")
         return
     end
 
@@ -4502,10 +4445,8 @@ function SlurryPipeManager:applyConnectCouplings(couplingA, couplingB, ownerA, o
             couplingA.pipeId = pipeId
             couplingB.pipeId = pipeId
         else
-            print("[SPS] applyConnectCouplings: WARNING pipe visual createPipe returned nil")
         end
     else
-        print("[SPS] applyConnectCouplings: WARNING g_spsPipeVisual not ready, no visual created")
     end
 
     -- Play connector animations forward on both ends (no-op if not bound).
@@ -4519,7 +4460,6 @@ end
 function SlurryPipeManager:onCouplerDisconnect(vehicle, coupling)
     -- Valve must be closed
     if coupling.valveOpen then
-        print("[SPS] onCouplerDisconnect: REFUSED - valve is open on coupling id=" .. tostring(coupling.id))
         if g_currentMission ~= nil then
             g_currentMission:showBlinkingWarning(g_i18n:getText("warning_slurryCloseValveFirst"), 2000)
         end
@@ -4558,7 +4498,6 @@ function SlurryPipeManager:applyDisconnect(vehicle, couplingId, couplingObj)
         end
     end
     if coupling == nil then
-        print("[SPS] applyDisconnect: coupling id=" .. tostring(couplingId) .. " not found")
         return
     end
 
@@ -4571,12 +4510,10 @@ function SlurryPipeManager:applyDisconnect(vehicle, couplingId, couplingObj)
             g_spsPipeVisual:destroyPipe(pipeData.inst)
             self.activePipes[coupling.pipeId] = nil
         else
-            print("[SPS] applyDisconnect: WARNING pipeId=" .. tostring(coupling.pipeId) .. " had no pipeData in activePipes")
         end
         coupling.pipeId = nil
         if partner ~= nil then partner.pipeId = nil end
     else
-        print("[SPS] applyDisconnect: WARNING coupling id=" .. tostring(couplingId) .. " had no pipeId - no visual to destroy")
     end
 
     -- Stop any active flow
@@ -4601,7 +4538,6 @@ function SlurryPipeManager:applyDisconnect(vehicle, couplingId, couplingObj)
         local partnerVehicle, _ = self:_findCouplingOwner(partner)
         if partnerVehicle ~= nil then self:stopFlow(partnerVehicle) end
     else
-        print("[SPS] applyDisconnect: WARNING no partner found for coupling id=" .. tostring(couplingId))
     end
 
     -- Free chain binding: if this disconnect breaks a vehicle/placeable coupling
@@ -4622,9 +4558,6 @@ function SlurryPipeManager:applyDisconnect(vehicle, couplingId, couplingObj)
         end
         chain.anchorCoupling = nil
         if c.chainActivatable ~= nil then c.chainActivatable.chain = nil end
-        print(string.format(
-            "[SPS] applyDisconnect: freed chain anchor binding — coupling id=%s released (chain remains, segments=%d)",
-            tostring(c.id), #chain.segments))
     end
     freeChainBindingIfNeeded(coupling, partner)
     freeChainBindingIfNeeded(partner, coupling)
@@ -4647,9 +4580,6 @@ function SlurryPipeManager:onValveOpen(vehicle, coupling)
     if not coupling.isConnected then return end
     if coupling.valveOpen then return end
 
-    print(string.format("[SPS valve] onValveOpen: coupling.id=%s isChainTerminus=%s partner.id=%s",
-        tostring(coupling.id), tostring(coupling.isChainTerminus),
-        tostring(coupling.connectedPartnerCoupling and coupling.connectedPartnerCoupling.id or nil)))
 
     if g_server == nil then
         SlurryValveStateEvent.sendEvent(vehicle, coupling, true)
@@ -4686,12 +4616,9 @@ end
 function SlurryPipeManager:_propagateValveState(coupling, open)
     local partner = coupling.connectedPartnerCoupling
     if partner == nil then
-        print("[SPS valve] _propagateValveState: partner is nil, abort")
         return
     end
 
-    print(string.format("[SPS valve] _propagateValveState: partner.id=%s isChainTerminus=%s partner.chain=%s",
-        tostring(partner.id), tostring(partner.isChainTerminus), tostring(partner.chain ~= nil)))
 
     -- Find the far-end coupling by walking: if partner is a chain terminus,
     -- get the chain, find the other terminus that is connected, open/close it.
@@ -4700,8 +4627,6 @@ function SlurryPipeManager:_propagateValveState(coupling, open)
         local chain = partner.chain
         -- Walk all terminus entries for this chain looking for the connected far end
         for _, ct in ipairs(self.chainTerminusEntries) do
-            print(string.format("[SPS valve]   walk: ct.id=%s ct.chain=match=%s ct.isConnected=%s ct~=partner=%s",
-                tostring(ct.id), tostring(ct.chain == chain), tostring(ct.isConnected), tostring(ct ~= partner)))
             if ct ~= partner and ct.chain == chain and ct.isConnected then
                 farEnd = ct
                 break
@@ -4723,15 +4648,12 @@ function SlurryPipeManager:_propagateValveState(coupling, open)
     end
 
     if farEnd == nil then
-        print("[SPS valve] _propagateValveState: farEnd is nil, abort")
         return
     end
     if farEnd.valveOpen == open then
-        print("[SPS valve] _propagateValveState: farEnd already in target state, abort")
         return
     end
 
-    print(string.format("[SPS valve] _propagateValveState: forwarding to farEnd.id=%s", tostring(farEnd.id)))
     self:applyValveState(nil, farEnd.id, open, farEnd)
     local farVehicle, _ = self:_findCouplingOwner(farEnd)
     SlurryValveStateEvent.sendEvent(farVehicle, farEnd, open)
@@ -4785,7 +4707,6 @@ function SlurryPipeManager:applyConnect(vehicleA, targetObject, targetType, coup
     end
 
     if couplingA == nil or couplingB == nil then
-        print("[SPS] applyConnect: coupling not found A=" .. tostring(couplingIdA) .. " B=" .. tostring(couplingIdB))
         return
     end
 
@@ -4822,13 +4743,9 @@ function SlurryPipeManager:applyValveState(vehicle, couplingId, isOpen, coupling
         end
     end
     if coupling == nil then
-        print(string.format("[SPS valve] applyValveState: coupling.id=%s NOT FOUND", tostring(couplingId)))
         return
     end
 
-    print(string.format("[SPS valve] applyValveState: id=%s found in %s, isOpen=%s, partner.id=%s",
-        tostring(coupling.id), foundIn, tostring(isOpen),
-        tostring(coupling.connectedPartnerCoupling and coupling.connectedPartnerCoupling.id or nil)))
 
     coupling.valveOpen = isOpen
 
@@ -4857,11 +4774,9 @@ function SlurryPipeManager:applyValveState(vehicle, couplingId, isOpen, coupling
     if SPSCouplerAnimator ~= nil then
         local dir = isOpen and 1 or -1
         if coupling.valveAnim ~= nil then
-            print(string.format("[SPS valve] applyValveState: playing valveAnim on coupling.id=%s", tostring(couplingId)))
             SPSCouplerAnimator.play(coupling.valveAnim, dir)
         end
         if partner ~= nil and partner.valveAnim ~= nil then
-            print(string.format("[SPS valve] applyValveState: playing valveAnim on partner.id=%s", tostring(partner.id)))
             SPSCouplerAnimator.play(partner.valveAnim, dir)
         end
     end
@@ -5276,7 +5191,6 @@ function SlurryPipeManager:update(dt)
                 local motorOk = root ~= nil and root.getIsMotorStarted ~= nil and root:getIsMotorStarted()
                 local ptoOk   = SlurryPipeSystemOverride.isPTOConnected(vehicle)
                 if not motorOk or not ptoOk then
-                    print("[SPS PUMP] update: stopping pump — motorOk=" .. tostring(motorOk) .. " ptoOk=" .. tostring(ptoOk) .. " vehicle=" .. tostring(vehicle.configFileName))
                     state.pumpRunning = false
                     -- Spreader valve intentionally left OPEN. Stored pressure must
                     -- keep pushing slurry out (tapering) until it drains below
@@ -5377,8 +5291,6 @@ function SlurryPipeManager:update(dt)
                 if vehicle.getIsTurnedOn ~= nil and vehicle.setIsTurnedOn ~= nil
                    and inLine ~= vehicle:getIsTurnedOn() then
                     vehicle:setIsTurnedOn(inLine)
-                    print("[SPS AI GATE] AI spreader turn " .. (inLine and "ON" or "OFF")
-                        .. " (in-line driver) for " .. tostring(vehicle.configFileName))
                 end
                 for _, bar in ipairs(bars) do
                     if bar.getIsTurnedOn ~= nil and bar.setIsTurnedOn ~= nil
@@ -5533,7 +5445,6 @@ function SlurryPipeManager:update(dt)
                                     break
                                 end
                             end
-							print("[SPS PIPE EFFECT TEST] path=conduit resolvedCoupling=" .. tostring(resolvedCoupling ~= nil))
                             shouldPlay = conduitActive and cabOpen and pumpOn and isDestination
                         elseif sc.valveOpen then
 							local isDischarge = vState ~= nil and vState.direction == SPS_DIRECTION_DISCHARGE
@@ -5550,8 +5461,7 @@ function SlurryPipeManager:update(dt)
 									tankerHasSlurry = vehicle:getFillUnitFillLevel(fillUnitIndex) > 0
 								end
 							end
-							print("[SPS PIPE EFFECT TEST] path=direct scValveOpen=" .. tostring(sc.valveOpen))
-							shouldPlay = (self:getPressureFlowScalar(vehicle) > 0) and dirOk and tankerHasSlurry
+							shouldPlay = pumpOn and (self:getPressureFlowScalar(vehicle) > 0) and dirOk and tankerHasSlurry
 						end
                     end
                 end
@@ -5603,6 +5513,12 @@ function SlurryPipeManager:update(dt)
                                         end
                                     else
                                         local valveOpen2 = resolvedC.valveOpen == true
+                                        local pumpOn2b
+                                        if self:isVehicleSelfPowered(vehicle2) then
+                                            pumpOn2b = vState2 ~= nil and vState2.pumpRunning == true
+                                        else
+                                            pumpOn2b = vehicle2.getIsTurnedOn ~= nil and vehicle2:getIsTurnedOn() or false
+                                        end
                                         local isDischarge2 = vState2 ~= nil and vState2.direction == SPS_DIRECTION_DISCHARGE
                                         local dirOk2
                                         if sc.flowDirection == "DISCHARGE" then dirOk2 = isDischarge2
@@ -5617,7 +5533,7 @@ function SlurryPipeManager:update(dt)
                                             end
                                         end
                                         
-                                        if (self:getPressureFlowScalar(vehicle2) > 0) and valveOpen2 and dirOk2 and tankerHasSlurry2 then
+                                        if pumpOn2b and (self:getPressureFlowScalar(vehicle2) > 0) and valveOpen2 and dirOk2 and tankerHasSlurry2 then
                                             shouldPlay = true
                                         end
                                     end
@@ -5680,16 +5596,11 @@ function SlurryPipeManager:update(dt)
                 local session = self:buildFlowSession(vehicle)
                 if session ~= nil then
                     self.activeFlows[vehicle] = session
-                    print("[SPS] update: flow session STARTED for " .. tostring(vehicle.configFileName)
-                        .. " cabValve=" .. tostring(cabValveOpen)
-                        .. " couplingFlow=" .. tostring(hasCouplingFlow))
                 else
-                    print("[SPS] update: buildFlowSession returned nil for " .. tostring(vehicle.configFileName))
                 end
             end
         else
             if self.activeFlows[vehicle] ~= nil then
-                print("[SPS] update: flow session STOPPED for " .. tostring(vehicle.configFileName))
                 self:stopFlow(vehicle)
             end
         end
@@ -5727,8 +5638,6 @@ function SlurryPipeManager:update(dt)
                                 local bx, by, bz = getWorldTranslation(partner.mountNode)
                                 local dist = MathUtil.vector3Length(ax - bx, ay - by, az - bz)
                                 if dist > SPS_AUTODISCONNECT_DIST then
-                                    print("[SPS] auto-disconnect: dist=" .. string.format("%.1f", dist)
-                                        .. "m > max=" .. tostring(SPS_AUTODISCONNECT_DIST) .. "m")
                                     self:_forceDisconnect(entry.vehicle, coupling)
                                 end
                             end
@@ -5938,10 +5847,8 @@ function SlurryPipeManager:detectArmConnection(vehicle, entry, arm)
 
     if prevConnected ~= newConnected then
         if newConnected then
-            print("[SPS] Arm connected (" .. (foundBootPort ~= nil and "RUBBER_BOOT" or "OPEN_PIT") .. ") on " .. tostring(vehicle.configFileName))
             self:onArmConnected(vehicle, arm)
         else
-            print("[SPS] Arm disconnected on " .. tostring(vehicle.configFileName))
             self:onArmDisconnected(vehicle, arm)
         end
     end
@@ -5973,16 +5880,13 @@ function SlurryPipeManager:detectArmConnection(vehicle, entry, arm)
                 if pe ~= nil then
                     if effectFillType == FillType.WATER and g_spsWaterMaterial ~= nil then
                         setMaterial(pe.node, g_spsWaterMaterial, 0)
-                        print("[SPS] arm effect: applying WATER material for " .. tostring(vehicle.configFileName))
                     elseif g_spsSlurryMaterial ~= nil then
                         setMaterial(pe.node, g_spsSlurryMaterial, 0)
-                        print("[SPS] arm effect: applying SLURRY material for " .. tostring(vehicle.configFileName))
                     end
                     pe.hasValidMaterial = true
                     pe.useBaseMaterial  = true
                 end
                 g_effectManager:setEffectTypeInfo(entry.pipeEffects, effectFillType)
-                print("[SPS] after setEffectTypeInfo: hasValidMaterial=" .. tostring(pe and pe.hasValidMaterial) .. " node=" .. tostring(pe and pe.node))
                 g_effectManager:startEffects(entry.pipeEffects)
                 arm.effectPlaying = true
             end
@@ -6080,9 +5984,6 @@ function SlurryPipeManager:tickFlow(session, dt)
         -- Verify destination accepts this fillType (right category + free space).
         if not self:_destAcceptsFillType(dstEntry, fillType) then
             if not session._loggedTypeMismatch then
-                print(string.format("[SPS] coupling-to-coupling: destination does not accept fillType %s (source=%s, dst=%s)",
-                    tostring(fillType),
-                    tostring(srcEntry.type), tostring(dstEntry.type)))
                 session._loggedTypeMismatch = true
             end
             return
@@ -6748,7 +6649,6 @@ function SlurryPipeManager:resolveVehicleSource(vehicle)
                     end
                 else
                     if not entry.sourceResolvePrinted then
-                        print("[SPS] resolveVehicleSource deferred: " .. tostring(vehicle.configFileName))
                         entry.sourceResolvePrinted = true
                     end
                 end
@@ -6939,9 +6839,6 @@ function SlurryPipeManager:removeFromSource(sourceEntry, amount, fillType, farmV
                     end
                     if not srcVehicle._spsBypassRemoveLogged then
                         srcVehicle._spsBypassRemoveLogged = true
-                        print(string.format(
-                            "[SPS SPR] removeFromSource: vanilla gate bypassed for fui=%s, fillType=%s, delta=%s (one-time)",
-                            tostring(fui), tostring(fillType), tostring(delta)))
                     end
                 end
             end
@@ -6998,32 +6895,18 @@ function SlurryPipeManager:addToSource(sourceEntry, amount, fillType, farmVehicl
                 local fu         = hasFUList and destVehicle.spec_fillUnit.fillUnits[fui] or nil
                 local hasSTT     = fu ~= nil and fu.supportedToolTypes ~= nil
                 local sttBefore  = hasSTT and fu.supportedToolTypes[hasTTTrig and ToolType.TRIGGER or 0] or nil
-                print(string.format(
-                    "[SPS SPR INJECT] fui=%s ToolType=%s ToolType.TRIGGER=%s spec_fillUnit=%s fillUnits=%s fu=%s supportedToolTypes=%s before=%s",
-                    tostring(fui), tostring(hasTT), tostring(hasTTTrig),
-                    tostring(hasSpec), tostring(hasFUList), tostring(fu ~= nil),
-                    tostring(hasSTT), tostring(sttBefore)))
                 if hasTTTrig and hasSTT then
                     fu.supportedToolTypes[ToolType.TRIGGER] = true
                     local sttAfter      = fu.supportedToolTypes[ToolType.TRIGGER]
                     local getterTool    = destVehicle:getFillUnitSupportsToolType(fui, ToolType.TRIGGER)
                     local getterFill    = destVehicle:getFillUnitSupportsFillType(fui, fillType)
                     local getterCombo   = destVehicle:getFillUnitSupportsToolTypeAndFillType(fui, ToolType.TRIGGER, fillType)
-                    print(string.format(
-                        "[SPS SPR INJECT] set complete after=%s getter(tool)=%s getter(fill)=%s combo=%s",
-                        tostring(sttAfter), tostring(getterTool), tostring(getterFill), tostring(getterCombo)))
                     -- Dump function refs to detect overwrites
-                    print(string.format(
-                        "[SPS SPR INJECT] fn refs: supportsToolType=%s vanilla=%s combo=%s",
-                        tostring(destVehicle.getFillUnitSupportsToolType),
-                        tostring(FillUnit and FillUnit.getFillUnitSupportsToolType),
-                        tostring(destVehicle.getFillUnitSupportsToolTypeAndFillType)))
                     -- Dump every toolType key present in the table
                     local keys = {}
                     for k, v in pairs(fu.supportedToolTypes) do
                         keys[#keys + 1] = tostring(k) .. "=" .. tostring(v)
                     end
-                    print("[SPS SPR INJECT] supportedToolTypes contents: { " .. table.concat(keys, ", ") .. " }")
                     -- Dump all ToolType constants we can see
                     if ToolType ~= nil then
                         local tt = {}
@@ -7032,10 +6915,8 @@ function SlurryPipeManager:addToSource(sourceEntry, amount, fillType, farmVehicl
                                 tt[#tt + 1] = tostring(k) .. "=" .. tostring(v)
                             end
                         end
-                        print("[SPS SPR INJECT] ToolType constants: { " .. table.concat(tt, ", ") .. " }")
                     end
                 else
-                    print("[SPS SPR INJECT] could not inject — gate failure")
                 end
             end
 
@@ -7093,9 +6974,6 @@ function SlurryPipeManager:addToSource(sourceEntry, amount, fillType, farmVehicl
                     end
                     if not destVehicle._spsBypassLogged then
                         destVehicle._spsBypassLogged = true
-                        print(string.format(
-                            "[SPS SPR] addToSource: vanilla gate bypassed for fui=%s, fillType=%s, applied=%s (one-time)",
-                            tostring(fui), tostring(fillType), tostring(applied)))
                     end
                 end
             end
@@ -7110,22 +6988,6 @@ function SlurryPipeManager:addToSource(sourceEntry, amount, fillType, farmVehicl
                     local sToolTrig  = destVehicle:getFillUnitSupportsToolType(fui, ToolType.TRIGGER)
                     local sFillType  = destVehicle:getFillUnitSupportsFillType(fui, fillType)
                     local allowFT    = destVehicle:getFillUnitAllowsFillType(fui, fillType)
-                    print(string.format(
-                        "[SPS SPR DIAG] addToSource: applied=%s farmId=%s fui=%s fillType=%s ToolType.TRIGGER=%s isServer=%s",
-                        tostring(applied), tostring(farmId), tostring(fui), tostring(fillType),
-                        tostring(ToolType.TRIGGER), tostring(destVehicle.isServer)))
-                    print(string.format(
-                        "[SPS SPR DIAG]   supportsToolType(TRIGGER)=%s supportsFillType=%s allowsFillType=%s",
-                        tostring(sToolTrig), tostring(sFillType), tostring(allowFT)))
-                    print(string.format(
-                        "[SPS SPR DIAG]   fillUnit.fillType=%s fillUnit.fillLevel=%s fillUnit.capacity=%s ignoreFillLimit=%s",
-                        tostring(fu and fu.fillType),
-                        tostring(fu and fu.fillLevel),
-                        tostring(fu and fu.capacity),
-                        tostring(fu and fu.ignoreFillLimit)))
-                    print(string.format(
-                        "[SPS SPR DIAG]   trailerFillLimit=%s",
-                        tostring(g_currentMission and g_currentMission.missionInfo and g_currentMission.missionInfo.trailerFillLimit)))
                 end
             end
         end
@@ -7175,7 +7037,6 @@ function SlurryPipeManager:loadSprayerVehicleConfigs(modDirectory)
     local manifestPath = modDirectory .. "configs/spsConfigManifest.xml"
     local xmlFile = XMLFile.load("spsManifest", manifestPath)
     if xmlFile == nil then
-        print("[SPS SPR] loadSprayerVehicleConfigs: could not load manifest: " .. manifestPath)
         return
     end
     local idx = 0
@@ -7189,7 +7050,6 @@ function SlurryPipeManager:loadSprayerVehicleConfigs(modDirectory)
                 cfgDir = matchPath:match("^(.*)/[^/]+%.xml$")
             end
             if cfgDir == nil then
-                print("[SPS SPR] loadSprayerVehicleConfigs: malformed path '" .. matchPath .. "'")
             else
                 local xmlFilePath = configRoot .. cfgDir .. "/fillPoints.xml"
                 if fileExists(xmlFilePath) then
@@ -7197,9 +7057,7 @@ function SlurryPipeManager:loadSprayerVehicleConfigs(modDirectory)
                         xmlFilePath = xmlFilePath,
                         matchPath   = matchPath,
                     }
-                    print("[SPS SPR] loadSprayerVehicleConfigs: registered '" .. matchPath .. "' -> " .. xmlFilePath)
                 else
-                    print("[SPS SPR] loadSprayerVehicleConfigs: no fillPoints.xml at " .. xmlFilePath)
                 end
             end
         end
@@ -7208,7 +7066,6 @@ function SlurryPipeManager:loadSprayerVehicleConfigs(modDirectory)
     xmlFile:delete()
     local count = 0
     for _ in pairs(self.sprayerVehicleConfigMap) do count = count + 1 end
-    print("[SPS SPR] loadSprayerVehicleConfigs: loaded " .. tostring(count) .. " sprayer vehicle configs")
 end
 
 function SlurryPipeManager:loadSprayerPlaceableConfigs(modDirectory)
@@ -7216,7 +7073,6 @@ function SlurryPipeManager:loadSprayerPlaceableConfigs(modDirectory)
     local manifestPath = modDirectory .. "configs/spsConfigManifest.xml"
     local xmlFile = XMLFile.load("spsManifest", manifestPath)
     if xmlFile == nil then
-        print("[SPS SPR] loadSprayerPlaceableConfigs: could not load manifest: " .. manifestPath)
         return
     end
     local idx = 0
@@ -7230,7 +7086,6 @@ function SlurryPipeManager:loadSprayerPlaceableConfigs(modDirectory)
                 cfgDir = matchPath:match("^(.*)/[^/]+%.xml$")
             end
             if cfgDir == nil then
-                print("[SPS SPR] loadSprayerPlaceableConfigs: malformed path '" .. matchPath .. "'")
             else
                 local xmlFilePath = configRoot .. cfgDir .. "/fillPoints.xml"
                 if fileExists(xmlFilePath) then
@@ -7238,9 +7093,7 @@ function SlurryPipeManager:loadSprayerPlaceableConfigs(modDirectory)
                         xmlFilePath = xmlFilePath,
                         matchPath   = matchPath,
                     }
-                    print("[SPS SPR] loadSprayerPlaceableConfigs: registered '" .. matchPath .. "' -> " .. xmlFilePath)
                 else
-                    print("[SPS SPR] loadSprayerPlaceableConfigs: no fillPoints.xml at " .. xmlFilePath)
                 end
             end
         end
@@ -7249,7 +7102,6 @@ function SlurryPipeManager:loadSprayerPlaceableConfigs(modDirectory)
     xmlFile:delete()
     local count = 0
     for _ in pairs(self.sprayerPlaceableConfigMap) do count = count + 1 end
-    print("[SPS SPR] loadSprayerPlaceableConfigs: loaded " .. tostring(count) .. " sprayer placeable configs")
 end
 
 -- ---------------------------------------------------------------------------
@@ -7314,7 +7166,6 @@ function SlurryPipeManager:registerSprayerVehicle(vehicle)
 
     local config = self:findSprayerVehicleConfigForVehicle(vehicle)
     if config == nil then
-        print("[SPS SPR] registerSprayerVehicle: no config for " .. tostring(vehicle.configFileName))
         return
     end
 
@@ -7330,7 +7181,6 @@ function SlurryPipeManager:registerSprayerVehicle(vehicle)
         xmlFileOwned = true
     end
     if xmlFile == nil then
-        print("[SPS SPR] registerSprayerVehicle: XML load failed: " .. tostring(config.xmlFilePath))
         return
     end
 
@@ -7396,7 +7246,6 @@ function SlurryPipeManager:registerSprayerVehicle(vehicle)
                 end
             end
         else
-            print("[SPS SPR] registerSprayerVehicle: failed to load nodeTree: " .. tostring(fullPath))
         end
     end
 
@@ -7428,9 +7277,7 @@ function SlurryPipeManager:registerSprayerVehicle(vehicle)
                 -- { nodeId, rootNode } — a bare integer is treated as a child-index
                 -- path and crashes ("Failed to find child N ... only N children").
                 vehicle.i3dMappings[linkNodeName] = { nodeId = foundNode, rootNode = vehicle.rootNode }
-                print("[SPS SPR] registerSprayerVehicle: injected '" .. linkNodeName .. "' into i3dMappings nodeId=" .. tostring(foundNode) .. " rootNode=" .. tostring(vehicle.rootNode))
             else
-                print("[SPS SPR] registerSprayerVehicle: linkNode '" .. linkNodeName .. "' not found in vehicle hierarchy")
             end
         end
     end
@@ -7445,16 +7292,13 @@ function SlurryPipeManager:registerSprayerVehicle(vehicle)
                 vehicle.baseDirectory, vehicle.components, 0,
                 AudioGroup.VEHICLE, vehicle.i3dMappings, vehicle)
             if entry.engineLoopSample ~= nil then
-                print("[SPS SPR] registerSprayerVehicle: engine sound loaded")
             else
-                print("[SPS SPR] registerSprayerVehicle: engine sound failed to load")
             end
         end
     end
 
     -- Load vehicle-level load animation (e.g. toggleCover), shared across all couplings
     local vehicleLoadAnimName = xmlFile:getString(kp .. "loadAnimation#name")
-    print("[SPS SPR] registerSprayerVehicle: loadAnimationName=" .. tostring(vehicleLoadAnimName))
 
     -- Load sprayer pipe couplings
     local couplingIndex = 0
@@ -7508,9 +7352,7 @@ function SlurryPipeManager:registerSprayerVehicle(vehicle)
             table.insert(entry.couplings, couplingEntry)
             -- Control node activatable handles connect/disconnect for vehicles with sprayerPumpControls.
             -- SPSSprayerPipeActivatable is not registered; control node is single interaction point.
-            print("[SPS SPR] registerSprayerVehicle: coupling id=" .. tostring(couplingId) .. " registered, loadAnim=" .. tostring(couplingEntry.loadAnimationName))
         else
-            print("[SPS SPR] registerSprayerVehicle: coupling id=" .. tostring(couplingId) .. " mountNode not found, skipping")
         end
         couplingIndex = couplingIndex + 1
     end
@@ -7532,9 +7374,7 @@ function SlurryPipeManager:registerSprayerVehicle(vehicle)
             local pumpCtrl = SPSSprayerPumpControl.new(vehicle, pcNode, pcRadius)
             table.insert(entry.pumpControls, { id = pcId, node = pcNode, radius = pcRadius, activatable = pumpCtrl })
             g_currentMission.activatableObjectsSystem:addActivatable(pumpCtrl)
-            print("[SPS SPR] registerSprayerVehicle: pumpControl id=" .. tostring(pcId) .. " registered")
         else
-            print("[SPS SPR] registerSprayerVehicle: pumpControl id=" .. tostring(pcId) .. " node not found, skipping")
         end
         pcIndex = pcIndex + 1
     end
@@ -7545,7 +7385,6 @@ function SlurryPipeManager:registerSprayerVehicle(vehicle)
     -- Restore animation state from save if available
     self:_applyPendingSprayerAnimation(vehicle, entry)
     
-    print("[SPS SPR] registerSprayerVehicle: registered " .. tostring(vehicle.configFileName))
 end
 
 -- ---------------------------------------------------------------------------
@@ -7558,7 +7397,6 @@ function SlurryPipeManager:registerSprayerPlaceable(placeable)
 
     local config = self:findSprayerPlaceableConfigForPlaceable(placeable)
     if config == nil then
-        print("[SPS SPR] registerSprayerPlaceable: no config for " .. tostring(placeable.configFileName))
         return
     end
 
@@ -7571,7 +7409,6 @@ function SlurryPipeManager:registerSprayerPlaceable(placeable)
         xmlFileOwned = true
     end
     if xmlFile == nil then
-        print("[SPS SPR] registerSprayerPlaceable: XML load failed: " .. tostring(config.xmlFilePath))
         return
     end
 
@@ -7581,13 +7418,10 @@ function SlurryPipeManager:registerSprayerPlaceable(placeable)
     local storage = nil
     if placeable.spec_silo ~= nil and placeable.spec_silo.storage ~= nil then
         storage = placeable.spec_silo.storage
-        print("[SPS SPR] registerSprayerPlaceable: found storage in spec_silo")
     elseif placeable.spec_husbandry ~= nil and placeable.spec_husbandry.storage ~= nil then
         storage = placeable.spec_husbandry.storage
-        print("[SPS SPR] registerSprayerPlaceable: found storage in spec_husbandry")
     elseif placeable.spec_silo ~= nil and placeable.spec_silo.storages ~= nil and #placeable.spec_silo.storages > 0 then
         storage = placeable.spec_silo.storages[1]
-        print("[SPS SPR] registerSprayerPlaceable: found storage in spec_silo.storages[1]")
     end
 
     local sourceEntry = nil
@@ -7599,9 +7433,7 @@ function SlurryPipeManager:registerSprayerPlaceable(placeable)
             fillPlaneNode = nil,
             planeBounds   = nil,
         }
-        print("[SPS SPR] registerSprayerPlaceable: sourceEntry created for " .. tostring(placeable.configFileName))
     else
-        print("[SPS SPR] registerSprayerPlaceable: no storage found for " .. tostring(placeable.configFileName))
     end
 
     local linkedNodes = {}
@@ -7655,7 +7487,6 @@ function SlurryPipeManager:registerSprayerPlaceable(placeable)
             end
             delete(nodeTreeRoot)
         else
-            print("[SPS SPR] registerSprayerPlaceable: failed to load nodeTree: " .. tostring(fullPath))
         end
     end
 
@@ -7746,17 +7577,13 @@ function SlurryPipeManager:registerSprayerPlaceable(placeable)
             -- Placeable-side SPSSprayerPipeActivatable intentionally NOT registered.
             -- All connect/disconnect must go through the vehicle's sprayerPumpControl
             -- node to enforce the load animation -> connect -> valve animation sequence.
-            print("[SPS SPR] registerSprayerPlaceable: coupling id=" .. tostring(couplingId) .. " registered (no activatable, vehicle-side only)")
         else
-            print("[SPS SPR] registerSprayerPlaceable: coupling id=" .. tostring(couplingId)
-                .. " mountNode '" .. tostring(mountNodeName) .. "' not found, skipping")
         end
         couplingIndex = couplingIndex + 1
     end
 
     if xmlFileOwned then xmlFile:delete() end
     table.insert(self.registeredSprayerPlaceables, entry)
-    print("[SPS SPR] registerSprayerPlaceable: registered " .. tostring(placeable.configFileName))
 end
 
 -- ---------------------------------------------------------------------------
@@ -7797,10 +7624,6 @@ function SlurryPipeManager:unregisterSprayerVehicle(vehicle)
                 local okDel, errDel = pcall(function()
                     g_soundManager:deleteSample(entry.engineLoopSample)
                 end)
-                print("[SPS SPR] unregisterSprayerVehicle: sample cleanup stopOk="
-                    .. tostring(okStop) .. " delOk=" .. tostring(okDel)
-                    .. (okStop and "" or " stopErr=" .. tostring(errStop))
-                    .. (okDel  and "" or " delErr="  .. tostring(errDel)))
                 entry.engineLoopSample = nil
             end
             -- Delete linked nodes
@@ -7812,7 +7635,6 @@ function SlurryPipeManager:unregisterSprayerVehicle(vehicle)
                 entry.nodeTreeRoot = nil
             end
             table.remove(self.registeredSprayerVehicles, i)
-            print("[SPS SPR] unregisterSprayerVehicle: " .. tostring(vehicle.configFileName))
             return
         end
     end
@@ -7835,7 +7657,6 @@ function SlurryPipeManager:unregisterSprayerPlaceable(placeable)
                 if nodeId ~= nil and nodeId ~= 0 then delete(nodeId) end
             end
             table.remove(self.registeredSprayerPlaceables, i)
-            print("[SPS SPR] unregisterSprayerPlaceable: " .. tostring(placeable.configFileName))
             return
         end
     end
@@ -7973,15 +7794,12 @@ function SlurryPipeManager:onSprayerCouplerConnect(object, coupling)
 
     local otherCoupling = self:findOverlappingSprayerCoupler(coupling)
     if otherCoupling == nil then
-        print("[SPS SPR] onSprayerCouplerConnect: no overlapping coupler found")
         return
     end
     if coupling.isConnected then
-        print("[SPS SPR] onSprayerCouplerConnect: source coupling already connected")
         return
     end
     if otherCoupling.isConnected then
-        print("[SPS SPR] onSprayerCouplerConnect: target coupling already connected")
         return
     end
 
@@ -8017,23 +7835,18 @@ function SlurryPipeManager:applySprayerConnect(couplingA, couplingB, ownerA, own
             self.activeSprayerPipes[pipeId] = { inst = inst, couplingA = couplingA, couplingB = couplingB }
             couplingA.pipeId = pipeId
             couplingB.pipeId = pipeId
-            print("[SPS SPR] applySprayerConnect: pipe created pipeId=" .. tostring(pipeId))
         else
-            print("[SPS SPR] applySprayerConnect: WARNING g_spsSprayerPipeVisual:createPipe returned nil")
         end
     else
-        print("[SPS SPR] applySprayerConnect: WARNING g_spsSprayerPipeVisual not ready, no visual created")
     end
 
     -- Play connector animations forward (pipe connection)
     if SPSCouplerAnimator ~= nil then
         if couplingA.connectorAnim ~= nil then
             SPSCouplerAnimator.play(couplingA.connectorAnim, 1)
-            print("[SPS SPR] applySprayerConnect: connector animation played forward on couplingA")
         end
         if couplingB.connectorAnim ~= nil then
             SPSCouplerAnimator.play(couplingB.connectorAnim, 1)
-            print("[SPS SPR] applySprayerConnect: connector animation played forward on couplingB")
         end
     end
 
@@ -8044,7 +7857,6 @@ function SlurryPipeManager:applySprayerConnect(couplingA, couplingB, ownerA, own
     if ownerAEntry ~= nil then ownerAEntry.state.valveOpen = false end
     local ownerBEntry = self:getSprayerVehicleEntry(ownerB)
     if ownerBEntry ~= nil then ownerBEntry.state.valveOpen = false end
-    print("[SPS SPR] applySprayerConnect: valves initialised closed")
 end
 
 -- Network event path: called with IDs from remote clients or server broadcasts.
@@ -8068,7 +7880,6 @@ function SlurryPipeManager:applySprayerConnectById(object, couplingId, targetObj
         end
     end
     if couplingA == nil then
-        print("[SPS SPR] applySprayerConnectById: couplingA not found id=" .. tostring(couplingId))
         return
     end
 
@@ -8084,7 +7895,6 @@ function SlurryPipeManager:applySprayerConnectById(object, couplingId, targetObj
         couplingB = self:findOverlappingSprayerCoupler(couplingA)
     end
     if couplingB == nil then
-        print("[SPS SPR] applySprayerConnectById: couplingB not found")
         return
     end
 
@@ -8126,7 +7936,6 @@ function SlurryPipeManager:applySprayerDisconnect(object, couplingId, couplingOb
     end
 
     if coupling == nil then
-        print("[SPS SPR] applySprayerDisconnect: coupling id=" .. tostring(couplingId) .. " not found")
         return
     end
 
@@ -8142,12 +7951,10 @@ function SlurryPipeManager:applySprayerDisconnect(object, couplingId, couplingOb
     local ownerAEntry = self:getSprayerVehicleEntry(ownerA)
     if ownerAEntry ~= nil and ownerAEntry.state.pumpRunning then
         ownerAEntry.state.pumpRunning = false
-        print("[SPS SPR] applySprayerDisconnect: pump stopped on ownerA")
     end
     local ownerBEntry = self:getSprayerVehicleEntry(ownerB)
     if ownerBEntry ~= nil and ownerBEntry.state.pumpRunning then
         ownerBEntry.state.pumpRunning = false
-        print("[SPS SPR] applySprayerDisconnect: pump stopped on ownerB")
     end
 
     -- Close valves (must be before animations play)
@@ -8176,11 +7983,9 @@ function SlurryPipeManager:applySprayerDisconnect(object, couplingId, couplingOb
     if SPSCouplerAnimator ~= nil then
         if coupling.valveAnim ~= nil then
             SPSCouplerAnimator.play(coupling.valveAnim, -1)
-            print("[SPS SPR] applySprayerDisconnect: valve animation reversed on coupling")
         end
         if partner ~= nil and partner.valveAnim ~= nil then
             SPSCouplerAnimator.play(partner.valveAnim, -1)
-            print("[SPS SPR] applySprayerDisconnect: valve animation reversed on partner")
         end
     end
 
@@ -8188,11 +7993,9 @@ function SlurryPipeManager:applySprayerDisconnect(object, couplingId, couplingOb
     if SPSCouplerAnimator ~= nil then
         if coupling.connectorAnim ~= nil then
             SPSCouplerAnimator.play(coupling.connectorAnim, -1)
-            print("[SPS SPR] applySprayerDisconnect: connector animation reversed on coupling")
         end
         if partner ~= nil and partner.connectorAnim ~= nil then
             SPSCouplerAnimator.play(partner.connectorAnim, -1)
-            print("[SPS SPR] applySprayerDisconnect: connector animation reversed on partner")
         end
     end
 
@@ -8203,7 +8006,6 @@ function SlurryPipeManager:applySprayerDisconnect(object, couplingId, couplingOb
             g_spsSprayerPipeVisual:destroyPipe(pipeData.inst)
             self.activeSprayerPipes[coupling.pipeId] = nil
         else
-            print("[SPS SPR] applySprayerDisconnect: WARNING pipeId=" .. tostring(coupling.pipeId) .. " had no pipeData")
         end
         coupling.pipeId = nil
         if partner ~= nil then partner.pipeId = nil end
@@ -8225,20 +8027,17 @@ function SlurryPipeManager:applySprayerDisconnect(object, couplingId, couplingOb
     if vehicleOwner ~= nil and vehicleOwner.playAnimation ~= nil then
         if coupling.loadAnimationName ~= nil and coupling.loadAnimPlayed then
             vehicleOwner:playAnimation(coupling.loadAnimationName, -1)
-            print("[SPS SPR] applySprayerDisconnect: reversed load animation on vehicle")
         end
         if partner ~= nil and partner.loadAnimationName ~= nil and partner.loadAnimPlayed then
             local partnerVehicle = partner.object
             if partnerVehicle ~= nil and partnerVehicle.playAnimation ~= nil then
                 partnerVehicle:playAnimation(partner.loadAnimationName, -1)
-                print("[SPS SPR] applySprayerDisconnect: reversed load animation on partner vehicle")
             end
         end
     end
     coupling.loadAnimPlayed = false
     if partner ~= nil then partner.loadAnimPlayed = false end
 
-    print("[SPS SPR] applySprayerDisconnect: coupling id=" .. tostring(couplingId) .. " disconnected")
 end
 
 -- ---------------------------------------------------------------------------
@@ -8253,7 +8052,6 @@ function SlurryPipeManager:onSprayerToggleValve(object)
     local newValve = not state.valveOpen
     -- Pipe must be connected before opening
     if newValve and not self:sprayerHasConnectedPipe(object) then
-        print("[SPS SPR] onSprayerToggleValve: no pipe connected, valve blocked")
         return
     end
     if g_server ~= nil then
@@ -8282,7 +8080,6 @@ function SlurryPipeManager:onSprayerToggleValve(object)
             g_soundManager:stopSample(entry.engineLoopSample)
         end
     end
-    print("[SPS SPR] onSprayerToggleValve: valveOpen=" .. tostring(newValve) .. " pumpRunning=" .. tostring(newValve))
 end
 
 function SlurryPipeManager:onSprayerToggleDirection(object)
@@ -8290,7 +8087,6 @@ function SlurryPipeManager:onSprayerToggleDirection(object)
     if entry == nil then return end
     local state = entry.state
     if state.valveOpen then
-        print("[SPS SPR] onSprayerToggleDirection: valve open, direction change blocked")
         return
     end
     local newDir = (state.direction == SPS_SPRAYER_DIRECTION_FILL)
@@ -8302,7 +8098,6 @@ function SlurryPipeManager:onSprayerToggleDirection(object)
     else
         SPSSprayerDirectionEvent.sendEvent(object, newDir)
     end
-    print("[SPS SPR] onSprayerToggleDirection: direction=" .. tostring(newDir))
 end
 
 -- ---------------------------------------------------------------------------
@@ -8477,12 +8272,10 @@ function SlurryPipeManager:updateSprayers(dt)
         if hasFlow then
             if self.activeSprayerFlows[vehicle] == nil then
                 self.activeSprayerFlows[vehicle] = self:buildSprayerFlowSession(vehicle)
-                print("[SPS SPR] updateSprayers: flow session STARTED for " .. tostring(vehicle.configFileName))
             end
         else
             if self.activeSprayerFlows[vehicle] ~= nil then
                 self.activeSprayerFlows[vehicle] = nil
-                print("[SPS SPR] updateSprayers: flow session STOPPED for " .. tostring(vehicle.configFileName))
             end
         end
     end
@@ -8506,8 +8299,6 @@ function SlurryPipeManager:updateSprayers(dt)
                     local bx, by, bz = getWorldTranslation(c.connectedPartnerCoupling.mountNode)
                     local dist = MathUtil.vector3Length(ax-bx, ay-by, az-bz)
                     if dist > (c.maxPipeLength or 7.5) then
-                        print("[SPS SPR] updateSprayers: auto-disconnect coupling id=" .. tostring(c.id)
-                            .. " dist=" .. string.format("%.2f", dist))
                         self:applySprayerDisconnect(vEntry.object, c.id, c)
                         SPSSprayerDisconnectEvent.sendEvent(vEntry.object, c.id)
                     end

@@ -156,7 +156,7 @@
         <text name="warning_spsBlockageMacerator" text="Zerkleinerer verstopft - Streuer gestoppt. Freimachen, um fortzufahren." />
         <text name="warning_spsBlockageSection" text="Sektion verstopft: %s. Freimachen, um diesen Streifen wiederherzustellen." />
         <!-- Shear bolt -->
-        <text name="input_spsRepairShearBolt" text="Scherbolzen ersetzen [R halten]" />
+        <text name="input_SPS_REPAIR_SHEARBOLT" text="Scherbolzen ersetzen [R halten]" />
         <text name="action_spsRepairShearBolt" text="Scherbolzen ersetzen [R halten]" />
         <text name="action_spsRepairShearBoltWait" text="Scherbolzen ersetzen (Zapfwelle &amp; Motor ausschalten)" />
         <text name="warning_spsShearBoltSnapped" text="Zapfwellen-Scherbolzen gebrochen — Pumpe getrennt, Austausch erforderlich" />
