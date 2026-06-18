@@ -42,7 +42,7 @@ SPSShearBolt = {}
 -- to remove all shear-bolt logging. SPSShearBoltEvent and SPSShearBoltActivatable
 -- read this same switch.
 -- ===========================================================================
-SPSShearBolt.DEBUG = true
+SPSShearBolt.DEBUG = false
 
 local function dbg(msg)
     if SPSShearBolt.DEBUG then

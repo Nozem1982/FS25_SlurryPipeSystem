@@ -2,7 +2,7 @@
 
 <i3D name="nodeTree.i3d" version="1.6" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://i3d.giants.ch/schema/i3d-1.6.xsd">
   <Asset>
-    <Export program="GIANTS Editor 64bit" version="10.0.11"/>
+    <Export program="GIANTS Editor 64bit" version="10.0.12"/>
   </Asset>
 
   <Files>
@@ -36,11 +36,17 @@
         </TransformGroup>
       </TransformGroup>
       <TransformGroup name="outsideControl" nodeId="18">
-        <TransformGroup name="pq32000_vis" nodeId="426">
-          <TransformGroup name="pumpControl01" translation="0 0.825195 6.04973" nodeId="427"/>
+        <TransformGroup name="pq32000_vis" nodeId="19">
+          <TransformGroup name="pumpControl01" translation="0 0.825195 6.04973" nodeId="20"/>
         </TransformGroup>
       </TransformGroup>
-      <TransformGroup name="pipeEffects" nodeId="19"/>
+      <TransformGroup name="pipeEffects" nodeId="21"/>
+      <TransformGroup name="slurryHeight" nodeId="449">
+        <TransformGroup name="pq32000_vis" nodeId="450">
+          <TransformGroup name="emptyNode" translation="0 1.039 0" nodeId="451"/>
+          <TransformGroup name="fullNode" translation="-0.000104398 3.03717 0" nodeId="452"/>
+        </TransformGroup>
+      </TransformGroup>
     </TransformGroup>
   </Scene>
 

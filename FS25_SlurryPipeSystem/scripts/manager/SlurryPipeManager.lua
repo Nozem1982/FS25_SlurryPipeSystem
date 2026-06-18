@@ -29,6 +29,31 @@ SPS_AUTODISCONNECT_DIST = 6.0   -- distance (m) at which a connected pipe auto-d
 SlurryPipeManager = {}
 local SlurryPipeManager_mt = Class(SlurryPipeManager)
 
+-- ---------------------------------------------------------------------------
+-- Debug logging
+-- Flip SlurryPipeManager.DEBUG to true to print [SPS PM] trace lines from every
+-- key part of this script; set it to false to silence all logging from this
+-- file in one place.
+--
+-- SlurryPipeManager.log(fmt, ...) checks the flag BEFORE doing any string.format
+-- work, and callers pass the format + arguments through (they do not pre-format).
+-- That means when DEBUG is false there is no string allocation, so the helper is
+-- safe to call from event/lifecycle code. Per-tick / hot-path call sites are
+-- additionally wrapped in `if SlurryPipeManager.DEBUG then ... end` and gated on a
+-- state change so the loop body is skipped entirely when logging is off and never
+-- spams a line every frame when it is on.
+-- ---------------------------------------------------------------------------
+SlurryPipeManager.DEBUG = false
+
+function SlurryPipeManager.log(fmt, ...)
+    if not SlurryPipeManager.DEBUG then return end
+    if select("#", ...) > 0 then
+        print("[SPS PM] " .. string.format(fmt, ...))
+    else
+        print("[SPS PM] " .. tostring(fmt))
+    end
+end
+
 SlurryPipeManager.FILL_VOLUME_SEARCH_RADIUS = 3.0   -- XZ radius for vehicle fill volume (nurse tank) detection only
 SlurryPipeManager.DEFAULT_LITERS_PER_SECOND = 1000
 
@@ -92,6 +117,7 @@ function SlurryPipeManager.new()
     self.chainTerminusEntries  = {}   -- chain end arcs checked in findOverlappingCoupler
     self.pendingChains              = {}   -- saved chain data waiting for anchor coupling to register
     self.pendingDeployedCouplings   = {}   -- saved deployed couplings waiting for placeable to register
+    self.pendingPumpStates          = {}   -- saved per-vehicle pump direction waiting for vehicle to register
     self._pendingCouplerAnims       = {}   -- saved coupler animation states waiting to be applied
     self.pipeColors                 = {}   -- {name, r, g, b} loaded from spsColors.xml
     self.currentPipeColorIndex      = 1
@@ -174,6 +200,7 @@ end
 -- Config loading
 -- ---------------------------------------------------------------------------
 function SlurryPipeManager:loadVehicleConfigs(modDirectory)
+    SlurryPipeManager.log("loadVehicleConfigs: enter modDir=%s", tostring(modDirectory))
     self.modDirectory = modDirectory
     local configRoot   = modDirectory .. "configs/"
     local manifestPath = modDirectory .. "configs/spsConfigManifest.xml"
@@ -224,6 +251,7 @@ function SlurryPipeManager:loadVehicleConfigs(modDirectory)
 end
 
 function SlurryPipeManager:loadPlaceableConfigs(modDirectory)
+    SlurryPipeManager.log("loadPlaceableConfigs: enter modDir=%s", tostring(modDirectory))
     local configRoot   = modDirectory .. "configs/"
     local manifestPath = modDirectory .. "configs/spsConfigManifest.xml"
     local xmlFile = XMLFile.load("spsManifest", manifestPath)
@@ -270,6 +298,7 @@ end
 -- Pipe colour config
 -- ---------------------------------------------------------------------------
 function SlurryPipeManager:loadPipeColors(modDirectory)
+    SlurryPipeManager.log("loadPipeColors: enter")
     local path = modDirectory .. "configs/spsColors.xml"
     local xmlFile = XMLFile.load("spsColors", path)
     if xmlFile == nil then
@@ -318,6 +347,7 @@ function SlurryPipeManager:isFeatureEnabled(key)
     return self.featureToggles[key] ~= false
 end
 function SlurryPipeManager:findVehicleConfigForVehicle(vehicle)
+    SlurryPipeManager.log("findVehicleConfigForVehicle: %s", tostring(vehicle and vehicle.configFileName))
     if vehicle.configFileName == nil then return nil end
 
     -- Embedded config check: does the vehicle's own XML carry a <slurryPipeSystem>
@@ -352,6 +382,7 @@ function SlurryPipeManager:findVehicleConfigForVehicle(vehicle)
 end
 
 function SlurryPipeManager:findPlaceableConfigForPlaceable(placeable)
+    SlurryPipeManager.log("findPlaceableConfigForPlaceable: %s", tostring(placeable and placeable.configFileName))
     if placeable.configFileName == nil then return nil end
 
     -- Embedded config check: does the placeable's own XML carry a
@@ -381,6 +412,7 @@ end
 -- registerVehicle
 -- ---------------------------------------------------------------------------
 function SlurryPipeManager:registerVehicle(vehicle)
+    SlurryPipeManager.log("registerVehicle: enter %s", tostring(vehicle and vehicle.configFileName))
     for _, entry in ipairs(self.registeredVehicles) do
         if entry.vehicle == vehicle then return end
     end
@@ -601,6 +633,46 @@ function SlurryPipeManager:registerVehicle(vehicle)
         return searchTree(vehicle.rootNode, name)
     end
 
+    -- Surface height reference (opaque tanks have no fill volume to read a head
+    -- from). Two authored nodes mark the slurry surface at empty and at full; the
+    -- live world surface Y is lerp(emptyNode.y, fullNode.y, fillLevel/capacity).
+    -- Resolved by name from the vehicle tree (moves with the vehicle, so it stays
+    -- tilt-correct). Used by head equalisation; preferred over a fill volume when
+    -- present so both sides of a coupling measure head the same way.
+    do
+        local emptyName = xmlFile:getString(kp .. "slurryPipeSystem.surfaceRef#emptyNode")
+        local fullName  = xmlFile:getString(kp .. "slurryPipeSystem.surfaceRef#fullNode")
+        if emptyName ~= nil and fullName ~= nil then
+            local en = findLinkedNode(emptyName)
+            local fn = findLinkedNode(fullName)
+            if en ~= nil and fn ~= nil then
+                entry.surfaceRef = { emptyNode = en, fullNode = fn }
+                SlurryPipeManager.log("registerVehicle: surfaceRef resolved empty='%s' full='%s' on %s",
+                    tostring(emptyName), tostring(fullName), tostring(vehicle.configFileName))
+            else
+                SlurryPipeManager.log("registerVehicle: surfaceRef names NOT found (empty='%s'->%s full='%s'->%s) on %s",
+                    tostring(emptyName), tostring(en), tostring(fullName), tostring(fn), tostring(vehicle.configFileName))
+            end
+        end
+    end
+
+    -- Embedded i3d support: when no separate nodeTree.i3d is declared, the effect
+    -- nodes ("effect" / "pipeEffectSmoke") are authored directly in the vehicle's
+    -- own i3d. They were never resolved in that case (effectNode/smokeNode only get
+    -- set inside the nodeTree block above), so the streaming effect was skipped.
+    -- Resolve them here by name from the vehicle tree as a fallback. Names must be
+    -- unique in the vehicle i3d (searchTree returns the first depth-first hit).
+    if entry.effectNode == nil then
+        entry.effectNode = findLinkedNode("effect")
+    end
+    if entry.smokeNode == nil then
+        entry.smokeNode = findLinkedNode("pipeEffectSmoke")
+    end
+    if entry.nodeTreeRoot == nil and (entry.effectNode ~= nil or entry.smokeNode ~= nil) then
+        print(string.format("[SPS] embedded pipe effect nodes resolved from vehicle i3d (effect=%s smoke=%s) for %s",
+            tostring(entry.effectNode), tostring(entry.smokeNode), tostring(vehicle.configFileName)))
+    end
+
     -- Fill arms
     -- getActiveConfigIndex resolves the active 0-based slot for any config type.
     -- Defaults to "cylindered" for vehicles that use the standard cylindered spec.
@@ -612,11 +684,16 @@ function SlurryPipeManager:registerVehicle(vehicle)
         return nil
     end
 
-    -- configIndexMatches handles both single values ("2") and comma-separated
-    -- lists ("0,1,2") — needed for vehicles like RossMore with multiple designs.
-    local function configIndexMatches(cfgIndexStr, activeIndex)
-        for part in cfgIndexStr:gmatch("[^,]+") do
-            if tonumber(part) == activeIndex then return true end
+    -- configIndexMatches: true when the 0-based activeIndex appears in a
+    -- comma-separated list of indices (e.g. "1,2,3"; whitespace tolerant). Used by
+    -- the fillArm primary/secondary, pipeCoupling and rubberBootPort config gates.
+    local function configIndexMatches(indexStr, activeIndex)
+        if indexStr == nil or activeIndex == nil then return false end
+        for token in string.gmatch(indexStr, "[^,]+") do
+            local n = tonumber((token:gsub("%s+", "")))
+            if n ~= nil and n == activeIndex then
+                return true
+            end
         end
         return false
     end
@@ -636,6 +713,32 @@ function SlurryPipeManager:registerVehicle(vehicle)
             if activeIndex ~= nil and not configIndexMatches(cfgIndexStr, activeIndex) then
                 armIndex = armIndex + 1
                 continue
+            end
+        end
+
+        -- Optional SECONDARY config gate. The primary gate above allows only one
+        -- configType per arm; this adds a second condition so one arm can depend on
+        -- a different config as well (e.g. bare PT arm only when NO suction head).
+        --   #configType2  : second configuration name (e.g. "design6")
+        --   #configIndex2 : 0-based active index(es), comma-separated (e.g. "1,2")
+        --   #configMode2  : "require" (default) keep only when index2 matches;
+        --                   "exclude" drop when index2 matches
+        local cfg2Str = xmlFile:getString(armKey .. "#configIndex2")
+        if cfg2Str ~= nil then
+            local cfg2Type = xmlFile:getString(armKey .. "#configType2", "cylindered")
+            local cfg2Mode = xmlFile:getString(armKey .. "#configMode2", "require")
+            local active2  = getActiveConfigIndex(cfg2Type)
+            if active2 ~= nil then
+                local matches2 = configIndexMatches(cfg2Str, active2)
+                if (cfg2Mode == "exclude" and matches2)
+                or (cfg2Mode ~= "exclude" and not matches2) then
+                    SlurryDebug.log(string.format(
+                        "fillArm id=%s dropped by secondary gate (configType2=%s index2=%s mode=%s active2=%s)",
+                        tostring(armId), tostring(cfg2Type), tostring(cfg2Str),
+                        tostring(cfg2Mode), tostring(active2)))
+                    armIndex = armIndex + 1
+                    continue
+                end
             end
         end
 
@@ -669,18 +772,122 @@ function SlurryPipeManager:registerVehicle(vehicle)
             end
         end
 
+        -- Optional per-arm embedded pipe effect. Resolves an effect transform node
+        -- (its child(0) is the PipeEffect shape) and a smoke node from the vehicle's
+        -- own i3d by the names declared in the arm's <effects> block. Only the node
+        -- names are read here; the actual PipeEffect/ShaderPlaneEffect is built later
+        -- once the effect classes and materials are available. Additive: arms with no
+        -- <effects> block simply have no per-arm stream.
+        local armEffectKey = armKey .. ".effects"
+        if xmlFile:hasProperty(armEffectKey) then
+            local eName = xmlFile:getString(armEffectKey .. ".effectNode(0)#effectNode")
+            local sName = xmlFile:getString(armEffectKey .. ".effectNode(1)#effectNode")
+            local eNode = findLinkedNode(eName)
+            local sNode = findLinkedNode(sName)
+            if eNode ~= nil and sNode ~= nil then
+                armEntry.effectNode = eNode
+                armEntry.smokeNode  = sNode
+            end
+        end
+
         table.insert(entry.armEntries, armEntry)
         armIndex = armIndex + 1
     end
 
+    -- Embedded detection nodes: a node authored in the vehicle's own i3d sits inside a
+    -- container named after the arm it belongs to (e.g. SPS_fillArmCentre02 under a
+    -- "turretPTArm04" container). That container is a static authoring copy, so the
+    -- node never moves. Relink each detection node under the LIVE arm of the same name,
+    -- so it follows the real moving arm. World position is preserved so the node stays
+    -- where authored. No XML/nodeTree declaration is needed; the container name drives
+    -- it. Nodes whose name has no matching live arm (chassis couplers) are left alone.
+    --
+    -- The live-arm search must be DETERMINISTIC and IDEMPOTENT: arm names are duplicated
+    -- (real arm + SPS authoring copy + effect copy), and registerVehicle re-runs on
+    -- every config change. So we reject any candidate that lives under an "SPS_*" or
+    -- "pipeEffects" subtree (walking its ancestors). That always resolves to the real
+    -- moving arm, and re-running simply relinks the node onto the same arm it is already
+    -- under (a no-op) instead of flipping it back onto a static copy.
+    do
+        local function isAuthoringCopy(node)
+            local p = node
+            while p ~= nil and p ~= 0 do
+                local nm = getName(p)
+                if nm == "pipeEffects" or (nm ~= nil and nm:sub(1, 4) == "SPS_") then
+                    return true
+                end
+                p = getParent(p)
+            end
+            return false
+        end
+        local relinked = {}
+        local function relinkUnderNamedArm(spsNode)
+            if spsNode == nil or relinked[spsNode] or not entityExists(spsNode) then return end
+            local container = getParent(spsNode)
+            if container == nil then return end
+            local armName = getName(container)
+            local live = nil
+            local function search(root)
+                if live ~= nil or root == nil then return end
+                if getName(root) == armName and not isAuthoringCopy(root) then
+                    live = root
+                    return
+                end
+                for i = 0, getNumOfChildren(root) - 1 do
+                    search(getChildAt(root, i))
+                end
+            end
+            search(vehicle.rootNode)
+            if live ~= nil then
+                -- Pose-INDEPENDENT re-seat. The authoring container is a static copy of
+                -- the arm in its REST pose, so the node's LOCAL transform relative to that
+                -- container already encodes the correct arm-relative offset. Capture that
+                -- local transform and re-apply it under the live arm. We do NOT read the
+                -- live arm's current world pose here.
+                --
+                -- Why this matters: Cylindered:onPostLoad restores a savegame's moved arm
+                -- BEFORE Vehicle:onFinishedLoading (where this relink runs). The previous
+                -- worldToLocal(live, authoredWorld) baked whatever pose the arm held at
+                -- relink time, so on reload the node was seated at the rest-pose world spot
+                -- relative to the moved arm (node snapped to zero while the arm sat in its
+                -- saved position). Preserving the authored local transform is invariant to
+                -- the live arm's pose, so fresh and reloaded sessions both seat correctly.
+                local lx, ly, lz = getTranslation(spsNode)
+                local rx, ry, rz = getRotation(spsNode)
+                removeFromPhysics(spsNode)
+                link(live, spsNode)
+                addToPhysics(spsNode)
+                setTranslation(spsNode, lx, ly, lz)
+                setRotation(spsNode, rx, ry, rz)
+                relinked[spsNode] = true
+            end
+        end
+        for _, ae in ipairs(entry.armEntries) do
+            relinkUnderNamedArm(ae.tipNode)
+            relinkUnderNamedArm(ae.centreNode)
+            -- Per-arm embedded pipe effect/smoke transforms are authored under
+            -- pipeEffects containers named after the live arm parts. Relink them the
+            -- same way so the stream tracks the arm (the PipeEffect is built off the
+            -- node's child shape, so it follows once the transform is re-parented).
+            relinkUnderNamedArm(ae.effectNode)
+            relinkUnderNamedArm(ae.smokeNode)
+        end
+    end
 
-    -- Load fill arm effects from nodeTree pipeEffects node and fillPoints.xml
+
+    -- Load fill arm effects from the effect nodes (separate nodeTree.i3d OR, for an
+    -- embedded config, the vehicle's own i3d — resolved above). Gate on the effect
+    -- nodes existing rather than on a nodeTree file being present, so embedded
+    -- configs build the same effect. The inner effectNode/smokeNode nil-check is
+    -- unchanged and still guards the actual build.
     entry.pipeEffects = nil
-    --print("[SPS] pipeEffects guard: isClient=" .. tostring(vehicle.isClient) .. " nodeTreeRoot=" .. tostring(entry.nodeTreeRoot ~= nil) .. " armEntries=" .. #entry.armEntries)
-    if vehicle.isClient and entry.nodeTreeRoot ~= nil and #entry.armEntries > 0 then
-        local effectNode = entry.effectNode
-        local smokeNode  = entry.smokeNode
-        --print("[SPS] pipeEffects check: effectNode=" .. tostring(effectNode) .. " smokeNode=" .. tostring(smokeNode) .. " arms=" .. #entry.armEntries)
+    -- Build helper (additive): assembles one PipeEffect + ShaderPlaneEffect pair for
+    -- a given effect/smoke node pair and returns the {pe, se} list. Called once for
+    -- the legacy single effect (entry.effectNode/smokeNode) and once per arm that
+    -- declares its own embedded <effects> nodes, so a tanker can show more than one
+    -- stream (one per arm variant).
+    local function buildSpsPipeEffectSet(effectNode, smokeNode)
+        if not vehicle.isClient then return nil end
         if effectNode ~= nil and smokeNode ~= nil then
             -- Register classes if needed
             if g_effectManager:getEffectClass("PipeEffect") == nil and PipeEffect ~= nil then
@@ -773,9 +980,51 @@ function SlurryPipeManager:registerVehicle(vehicle)
             setVisibility(smokeNode, false)
             g_effectManager:setUpdateDistance({ se }, math.huge)
             table.insert(effects, se)
-            entry.pipeEffects = effects
-            --print("[SPS] pipeEffects manually built: " .. #effects .. " for " .. tostring(vehicle.configFileName))
-        else
+            return effects
+        end
+        return nil
+    end
+
+    -- Hide every declared per-arm effect mesh once at registration, INDEPENDENT of
+    -- the config gate. Embedded effect meshes live in the vehicle's own i3d and are
+    -- present in every config (and in the shop), so they are visible by default until
+    -- something hides them. The per-arm build below only hides the arm that is
+    -- currently gated-in (and only on a client), so we sweep all fillArm <effects>
+    -- blocks here (no gate, no client check) and hide the stream shape (child 0 of the
+    -- effect transform, matching pe.node) plus the smoke node. The streaming code
+    -- re-shows them on demand. Mirrors how the legacy single-effect build hides the
+    -- base tanker's one mesh unconditionally.
+    do
+        local hideArmIndex = 0
+        while true do
+            local hKey = string.format(kp .. "slurryPipeSystem.fillArms.fillArm(%d)", hideArmIndex)
+            if not xmlFile:hasProperty(hKey) then break end
+            local hEffKey = hKey .. ".effects"
+            if xmlFile:hasProperty(hEffKey) then
+                local eNode = findLinkedNode(xmlFile:getString(hEffKey .. ".effectNode(0)#effectNode"))
+                local sNode = findLinkedNode(xmlFile:getString(hEffKey .. ".effectNode(1)#effectNode"))
+                if eNode ~= nil and entityExists(eNode) and getNumOfChildren(eNode) > 0 then
+                    setVisibility(getChildAt(eNode, 0), false)
+                end
+                if sNode ~= nil and entityExists(sNode) then
+                    setVisibility(sNode, false)
+                end
+            end
+            hideArmIndex = hideArmIndex + 1
+        end
+    end
+
+    -- Legacy single effect (separate nodeTree.i3d, or embedded effect/pipeEffectSmoke
+    -- resolved by name above). Unchanged behaviour.
+    if entry.effectNode ~= nil and entry.smokeNode ~= nil and #entry.armEntries > 0 then
+        entry.pipeEffects = buildSpsPipeEffectSet(entry.effectNode, entry.smokeNode)
+    end
+
+    -- Per-arm effects (embedded i3d): each arm that resolved its own effect/smoke
+    -- nodes gets an independent stream, so multiple arms on one tanker can each emit.
+    for _, armE in ipairs(entry.armEntries) do
+        if armE.effectNode ~= nil and armE.smokeNode ~= nil then
+            armE.pipeEffects = buildSpsPipeEffectSet(armE.effectNode, armE.smokeNode)
         end
     end
 
@@ -1040,6 +1289,22 @@ function SlurryPipeManager:registerVehicle(vehicle)
     while true do
         local rbpKey = string.format(kp .. "slurryPipeSystem.rubberBootPorts.rubberBootPort(%d)", rbpIndex)
         if not xmlFile:hasProperty(rbpKey) then break end
+
+        -- Optional config gate (mirrors fillArm/pipeCoupling). #cylinderedConfigIndex
+        -- is the 0-based active index(es) (comma list ok); #configType names the
+        -- configuration (default "cylindered"). Lets a boot port be hidden unless its
+        -- config is fitted (e.g. design8 dockingFunnelStation). Additive: ports with
+        -- no gate attr behave exactly as before (always present).
+        local rbpCfgIndexStr = xmlFile:getString(rbpKey .. "#cylinderedConfigIndex")
+        if rbpCfgIndexStr ~= nil then
+            local cfgType     = xmlFile:getString(rbpKey .. "#configType", "cylindered")
+            local activeIndex = getActiveConfigIndex(cfgType)
+            if activeIndex ~= nil and not configIndexMatches(rbpCfgIndexStr, activeIndex) then
+                rbpIndex = rbpIndex + 1
+                continue
+            end
+        end
+
         local rbpId        = xmlFile:getInt(rbpKey .. "#id", rbpIndex + 1)
         local rbpLowerNode = findLinkedNode(xmlFile:getString(rbpKey .. "#lowerNodeName"))
         local rbpUpperNode = findLinkedNode(xmlFile:getString(rbpKey .. "#upperNodeName"))
@@ -1322,6 +1587,7 @@ end
 -- unregisterVehicle
 -- ---------------------------------------------------------------------------
 function SlurryPipeManager:unregisterVehicle(vehicle)
+    SlurryPipeManager.log("unregisterVehicle: enter %s", tostring(vehicle and vehicle.configFileName))
     for i, entry in ipairs(self.registeredVehicles) do
         if entry.vehicle == vehicle then
             self:stopFlow(vehicle)
@@ -1358,6 +1624,15 @@ function SlurryPipeManager:unregisterVehicle(vehicle)
             if entry.pipeEffects ~= nil then
                 g_effectManager:deleteEffects(entry.pipeEffects)
                 entry.pipeEffects = nil
+            end
+            -- Per-arm embedded effects
+            if entry.armEntries ~= nil then
+                for _, armE in ipairs(entry.armEntries) do
+                    if armE.pipeEffects ~= nil then
+                        g_effectManager:deleteEffects(armE.pipeEffects)
+                        armE.pipeEffects = nil
+                    end
+                end
             end
             -- Clean up coupling activatables
             if entry.pipeActivatables ~= nil then
@@ -1437,6 +1712,7 @@ end
 -- registerPlaceable
 -- ---------------------------------------------------------------------------
 function SlurryPipeManager:registerPlaceable(placeable)
+    SlurryPipeManager.log("registerPlaceable: enter %s", tostring(placeable and placeable.configFileName))
     local config = self:findPlaceableConfigForPlaceable(placeable)
     if config == nil then return end
 
@@ -1971,6 +2247,7 @@ end
 -- unregisterPlaceable
 -- ---------------------------------------------------------------------------
 function SlurryPipeManager:unregisterPlaceable(placeable)
+    SlurryPipeManager.log("unregisterPlaceable: enter %s", tostring(placeable and placeable.configFileName))
     for i, entry in ipairs(self.registeredPlaceables) do
         if entry.placeable == placeable then
             if entry.sourceEntry ~= nil then
@@ -2042,6 +2319,7 @@ end
 -- Position is stable across save/load for both placeables and vehicles
 -- (vehicles are at their parked position when saving).
 function SlurryPipeManager:saveCouplingConnections(savePath)
+    SlurryPipeManager.log("saveCouplingConnections: enter path=%s", tostring(savePath))
     local xmlFile = XMLFile.create("spsSave", savePath, "slurryPipeSystem")
     if xmlFile == nil then
         return
@@ -2136,6 +2414,26 @@ function SlurryPipeManager:saveCouplingConnections(savePath)
             end
         end
         end  -- Close if pEntry.storeCouplings ~= nil
+    end
+
+    -- Save per-vehicle pump direction (FILL/DISCHARGE), keyed by component world
+    -- position + configFileName (mirrors how connections are position-keyed).
+    -- Restored in tryResolvePendingConnections by nearest position + config match.
+    local pumpIdx = 0
+    for _, vEntry in ipairs(self.registeredVehicles) do
+        local state = vEntry.state
+        local veh   = vEntry.vehicle
+        if state ~= nil and state.direction ~= nil
+        and veh ~= nil and veh.components ~= nil and veh.components[1] ~= nil then
+            local wx, wy, wz = getWorldTranslation(veh.components[1].node)
+            local base = string.format("slurryPipeSystem.pumpStates.pumpState(%d)", pumpIdx)
+            xmlFile:setFloat (base .. "#x",         wx)
+            xmlFile:setFloat (base .. "#y",         wy)
+            xmlFile:setFloat (base .. "#z",         wz)
+            xmlFile:setString(base .. "#config",    tostring(veh.configFileName))
+            xmlFile:setInt   (base .. "#direction", state.direction)
+            pumpIdx = pumpIdx + 1
+        end
     end
 
     xmlFile:setInt("slurryPipeSystem#selectedColorIndex", self.currentPipeColorIndex)
@@ -2248,6 +2546,7 @@ end
 -- Called from SPSMod:loadMap after manager is ready.
 -- Populates pendingConnections. Each entry is resolved as couplings register.
 function SlurryPipeManager:loadCouplingConnections(savePath)
+    SlurryPipeManager.log("loadCouplingConnections: enter path=%s", tostring(savePath))
     if not fileExists(savePath) then
         return
     end
@@ -2346,6 +2645,22 @@ function SlurryPipeManager:loadCouplingConnections(savePath)
             id = xmlFile:getInt(base .. "#id",   0),
         })
         deployIdx = deployIdx + 1
+    end
+
+    -- Load per-vehicle pump direction (applied in tryResolvePendingConnections).
+    self.pendingPumpStates = {}
+    local pumpIdx = 0
+    while true do
+        local base = string.format("slurryPipeSystem.pumpStates.pumpState(%d)", pumpIdx)
+        if not xmlFile:hasProperty(base) then break end
+        table.insert(self.pendingPumpStates, {
+            x         = xmlFile:getFloat(base  .. "#x", 0),
+            y         = xmlFile:getFloat(base  .. "#y", 0),
+            z         = xmlFile:getFloat(base  .. "#z", 0),
+            config    = xmlFile:getString(base .. "#config", nil),
+            direction = xmlFile:getInt(base    .. "#direction", SPS_DIRECTION_FILL),
+        })
+        pumpIdx = pumpIdx + 1
     end
 
     -- Restore realism settings. Back-compat: older saves used #agitationEnabled as
@@ -2456,6 +2771,7 @@ end
 -- This is deliberately position-based because pipeCoupling id values repeat between
 -- vehicles, placeables and chain ends.
 function SlurryPipeManager:_applyPendingCouplerAnimation(coupling)
+    SlurryPipeManager.log("_applyPendingCouplerAnimation: couplingId=%s", tostring(coupling and coupling.id))
     if coupling == nil or coupling.mountNode == nil or coupling.mountNode == 0 then return false end
     if self._pendingCouplerAnims == nil or SPSCouplerAnimator == nil then return false end
     if not entityExists(coupling.mountNode) then return false end
@@ -2494,6 +2810,7 @@ end
 -- Applies saved sprayer animation state to a newly registered vehicle.
 -- Position-based matching with 0.1m tolerance.
 function SlurryPipeManager:_applyPendingSprayerAnimation(vehicle, entry)
+    SlurryPipeManager.log("_applyPendingSprayerAnimation: %s", tostring(vehicle and vehicle.configFileName))
     if vehicle == nil or entry == nil or entry.state.loadAnimName == nil then return false end
     if self._pendingSprayerAnimations == nil or #self._pendingSprayerAnimations == 0 then return false end
     if not entityExists(vehicle.rootNode) then return false end
@@ -2520,7 +2837,9 @@ end
 -- For each pending connection, checks if both mount nodes now exist.
 -- Position match tolerance: 0.1m (positions stored as floats, no drift expected).
 function SlurryPipeManager:tryResolvePendingConnections()
+    SlurryPipeManager.log("tryResolvePendingConnections: pendingConns=%d pendingChains=%d pendingDeployed=%d", #self.pendingConnections, #self.pendingChains, #self.pendingDeployedCouplings)
     if #self.pendingConnections == 0 and #self.pendingChains == 0 and #self.pendingDeployedCouplings == 0
+    and #self.pendingPumpStates == 0
     and next(self._pendingCouplerAnims) == nil then return end
 
     local TOLERANCE_SQ = 0.1 * 0.1
@@ -2638,6 +2957,40 @@ function SlurryPipeManager:tryResolvePendingConnections()
         end
     end
 
+    -- Resolve pending pump directions: match each to a registered vehicle by
+    -- nearest component position with the same configFileName, then restore
+    -- state.direction. Vehicles are placed by Giants before SPS load, so the
+    -- component position matches within a small margin.
+    if #self.pendingPumpStates > 0 then
+        local PUMP_TOL_SQ = 2.0 * 2.0
+        local resolvedPumps = {}
+        for _, pending in ipairs(self.pendingPumpStates) do
+            local best, bestSq = nil, PUMP_TOL_SQ
+            for _, vEntry in ipairs(self.registeredVehicles) do
+                local veh = vEntry.vehicle
+                if veh ~= nil and vEntry.state ~= nil
+                and veh.components ~= nil and veh.components[1] ~= nil
+                and (pending.config == nil or tostring(veh.configFileName) == pending.config) then
+                    local cx, cy, cz = getWorldTranslation(veh.components[1].node)
+                    local dx, dy, dz = cx - pending.x, cy - pending.y, cz - pending.z
+                    local d2 = dx*dx + dy*dy + dz*dz
+                    if d2 <= bestSq then best, bestSq = vEntry, d2 end
+                end
+            end
+            if best ~= nil then
+                best.state.direction = pending.direction
+                SlurryPipeManager.log("tryResolvePendingConnections: restored pump direction=%d on %s",
+                    pending.direction, tostring(best.vehicle and best.vehicle.configFileName))
+                table.insert(resolvedPumps, pending)
+            end
+        end
+        for _, r in ipairs(resolvedPumps) do
+            for i, p in ipairs(self.pendingPumpStates) do
+                if p == r then table.remove(self.pendingPumpStates, i) break end
+            end
+        end
+    end
+
     -- Final pass: restore saved animation positions on any registered coupler
     -- that did not go through applyConnectCouplings this tick.
     if self._pendingCouplerAnims ~= nil then
@@ -2662,16 +3015,25 @@ end
 -- Deployable coupling management
 -- ---------------------------------------------------------------------------
 function SlurryPipeManager:onCouplingDeploy(coupling)
+    SlurryPipeManager.log("onCouplingDeploy: couplingId=%s deployable=%s isDeployed=%s", tostring(coupling and coupling.id), tostring(coupling and coupling.deployable), tostring(coupling and coupling.isDeployed))
     if coupling == nil or not coupling.deployable or coupling.isDeployed then return end
     if g_server ~= nil then
         self:applyCouplingDeployState(coupling.placeable, coupling.id, true)
         SPSCouplingDeployEvent.sendEvent(coupling.placeable, coupling.id, true)
     else
+        -- MP CLIENT: the server's rebroadcast excludes the originating connection
+        -- (Server:broadcastEvent ignoreConnection, Server.lua), so this client would
+        -- never receive its own deploy back. Apply optimistically here for immediate,
+        -- correct local state; applyCouplingDeployState is client-safe (it is the same
+        -- function the broadcast invokes on every receiving client).
+        print(string.format("[SPS] onCouplingDeploy: client optimistic apply (placeable=%s id=%s)", tostring(coupling.placeable), tostring(coupling.id)))
+        self:applyCouplingDeployState(coupling.placeable, coupling.id, true)
         SPSCouplingDeployEvent.sendEvent(coupling.placeable, coupling.id, true)
     end
 end
 
 function SlurryPipeManager:onCouplingUndeploy(coupling)
+    SlurryPipeManager.log("onCouplingUndeploy: couplingId=%s", tostring(coupling and coupling.id))
     if coupling == nil or not coupling.deployable or not coupling.isDeployed then return end
     if coupling.isConnected then return end
     if coupling.chainActivatable ~= nil and coupling.chainActivatable.chain ~= nil then return end
@@ -2679,11 +3041,15 @@ function SlurryPipeManager:onCouplingUndeploy(coupling)
         self:applyCouplingDeployState(coupling.placeable, coupling.id, false)
         SPSCouplingDeployEvent.sendEvent(coupling.placeable, coupling.id, false)
     else
+        -- MP CLIENT: same sender-exclusion as onCouplingDeploy — apply optimistically.
+        print(string.format("[SPS] onCouplingUndeploy: client optimistic apply (placeable=%s id=%s)", tostring(coupling.placeable), tostring(coupling.id)))
+        self:applyCouplingDeployState(coupling.placeable, coupling.id, false)
         SPSCouplingDeployEvent.sendEvent(coupling.placeable, coupling.id, false)
     end
 end
 
 function SlurryPipeManager:applyCouplingDeployState(placeable, couplingId, isDeployed)
+    SlurryPipeManager.log("applyCouplingDeployState: couplingId=%s isDeployed=%s", tostring(couplingId), tostring(isDeployed))
     for _, pEntry in ipairs(self.registeredPlaceables) do
         if pEntry.placeable == placeable then
             for _, sc in ipairs(pEntry.storeCouplings) do
@@ -2746,6 +3112,7 @@ function SlurryPipeManager:_traceCoupling(label, c)
 end
 
 function SlurryPipeManager:onChainStartLaying(coupling, anchorActivatable)
+    SlurryPipeManager.log("onChainStartLaying: couplingId=%s", tostring(coupling and coupling.id))
     if coupling == nil then return end
     --print("[SPS TRACE] ===== onChainStartLaying =====")
     self:_traceCoupling("onChainStartLaying.coupling", coupling)
@@ -2786,12 +3153,14 @@ end
 
 -- Keep old name as alias for compatibility
 function SlurryPipeManager:onChainLayPipe(coupling, anchorActivatable)
+    SlurryPipeManager.log("onChainLayPipe: couplingId=%s", tostring(coupling and coupling.id))
     self:onChainStartLaying(coupling, anchorActivatable)
 end
 
 -- Called by anchor SPSChainActivatable after all segments removed.
 -- Removes the empty chain from the manager.
 function SlurryPipeManager:onChainEmpty(chain, coupling)
+    SlurryPipeManager.log("onChainEmpty: couplingId=%s", tostring(coupling and coupling.id))
     -- Play connector animation reverse on the anchor coupling (no-op if not bound).
     if SPSCouplerAnimator ~= nil and coupling ~= nil and coupling.connectorAnim ~= nil then
         SPSCouplerAnimator.play(coupling.connectorAnim, -1)
@@ -2809,6 +3178,7 @@ end
 -- State queries
 -- ---------------------------------------------------------------------------
 function SlurryPipeManager:hasValidConnection(vehicle)
+    SlurryPipeManager.log("hasValidConnection: %s", tostring(vehicle and vehicle.configFileName))
     for _, entry in ipairs(self.registeredVehicles) do
         if entry.vehicle == vehicle then
             for _, arm in ipairs(entry.armEntries) do
@@ -2908,6 +3278,7 @@ function SlurryPipeManager:updateAIGate(dt)
 end
 
 function SlurryPipeManager:onAIGateChanged(vehicle, vEntry, aiNow)
+    SlurryPipeManager.log("onAIGateChanged: %s aiNow=%s", tostring(vehicle and vehicle.configFileName), tostring(aiNow))
 
     -- Vanilla FillTrigger: SPS disables it at registration so the player must use
     -- the pipe/arm system to load. AI workers (vanilla / Courseplay / AutoDrive)
@@ -3007,11 +3378,15 @@ end
 function SlurryPipeManager:vehicleHasSpreader(vehicle)
     -- Check the tanker itself (e.g. Cobra with built-in spreader)
     if vehicle.spec_dischargeable ~= nil then return true end
-    -- Check attached implements (e.g. Samson with detachable rear spreader)
+    -- Check attached implements (e.g. Samson with detachable rear dribble bar).
+    -- Only count NON-motorized children: a motorized vehicle in the same root
+    -- group is the tractor pulling/carrying the unit, never a spreader. Some mod
+    -- tractors (e.g. the Fendt 800 mod) carry their own spec_dischargeable, which
+    -- would otherwise bleed a bogus spreader valve onto an attached pump.
     local root = vehicle:getRootVehicle()
     if root ~= nil and root.getChildVehicles ~= nil then
         for _, v in ipairs(root:getChildVehicles()) do
-            if v ~= vehicle and v.spec_dischargeable ~= nil then
+            if v ~= vehicle and v.spec_dischargeable ~= nil and v.spec_motorized == nil then
                 return true
             end
         end
@@ -3044,9 +3419,20 @@ function SlurryPipeManager:findAttachedDribbleBars(vehicle)
 end
 
 function SlurryPipeManager:onActionToggleSpreader(vehicle)
+    SlurryPipeManager.log("onActionToggleSpreader: %s", tostring(vehicle and vehicle.configFileName))
     local state = self:getVehicleState(vehicle)
     if state == nil then return end
     local newOpen = not state.spreaderValveOpen
+    -- MA/Bayern: hydraulic hoses must be connected to open the spreader valve
+    -- (same gate the fill-arm flow valve uses in onActionToggleFlow).
+    if newOpen then
+        if not SlurryPipeSystemOverride.isHydraulicsConnected(vehicle) then
+            if vehicle.isClient then
+                g_currentMission:showBlinkingWarning(g_i18n:getText("warning_spsConnectHydraulics"), 2000)
+            end
+            return
+        end
+    end
     -- The spreader can only discharge, so it may only open when the pump is set to
     -- Pressure (DISCHARGE). Pump state is irrelevant — stored pressure drives the
     -- spread. (The fill arm, by contrast, may open in either direction.)
@@ -3061,7 +3447,11 @@ function SlurryPipeManager:onActionToggleSpreader(vehicle)
         SPSSpreaderValveEvent.sendEvent(vehicle, newOpen)
         self:updateActionEventTexts(vehicle)
     else
+        -- MP CLIENT: apply locally (server rebroadcast excludes the sender), else the
+        -- next toggle recomputes from stale state and the action gets stuck.
+        state.spreaderValveOpen = newOpen
         SPSSpreaderValveEvent.sendEvent(vehicle, newOpen)
+        self:updateActionEventTexts(vehicle)
     end
 end
 
@@ -3155,6 +3545,7 @@ end
 -- Arm/coupling callbacks (stubs kept for future coupling re-addition)
 -- ---------------------------------------------------------------------------
 function SlurryPipeManager:onPumpStateChanged(vehicle, isPumpRunning)
+    SlurryPipeManager.log("onPumpStateChanged: %s -> pumpRunning=%s", tostring(vehicle and vehicle.configFileName), tostring(isPumpRunning))
     local state = self:getVehicleState(vehicle)
     if state ~= nil then
         state.pumpRunning = isPumpRunning == true
@@ -3162,6 +3553,7 @@ function SlurryPipeManager:onPumpStateChanged(vehicle, isPumpRunning)
 end
 
 function SlurryPipeManager:onSelfPumpToggle(vehicle)
+    SlurryPipeManager.log("onSelfPumpToggle: %s", tostring(vehicle and vehicle.configFileName))
     local state = self:getVehicleState(vehicle)
     if state == nil then return end
     local newRunning = not (state.pumpRunning == true)
@@ -3170,7 +3562,10 @@ function SlurryPipeManager:onSelfPumpToggle(vehicle)
         SPSSelfPumpStateEvent.sendEvent(vehicle, newRunning)
         self:updateActionEventTexts(vehicle)
     else
+        -- MP CLIENT: apply locally (server rebroadcast excludes the sender).
+        state.pumpRunning = newRunning
         SPSSelfPumpStateEvent.sendEvent(vehicle, newRunning)
+        self:updateActionEventTexts(vehicle)
     end
     if vehicle.isClient then
         local entry = self:getVehicleEntry(vehicle)
@@ -3188,6 +3583,7 @@ end
 -- ptoControl node, so behaviour is identical in and out of the cab. This is the
 -- exact logic that previously lived inline in init.lua's cab pumpCallback.
 function SlurryPipeManager:togglePump(vehicle)
+    SlurryPipeManager.log("togglePump: %s", tostring(vehicle and vehicle.configFileName))
     if vehicle == nil then return end
     if self:vehicleHasSpreader(vehicle) then
         local root = vehicle:getRootVehicle()
@@ -3217,7 +3613,12 @@ function SlurryPipeManager:togglePump(vehicle)
             end
             self:updateActionEventTexts(vehicle)
         else
+            -- MP CLIENT: apply SPS pump state locally (server rebroadcast excludes the
+            -- sender). setIsTurnedOn is left to the server — vanilla TurnOnVehicle syncs
+            -- the turned-on state back to this client on its own stream.
+            state.pumpRunning = newPump
             SPSSelfPumpStateEvent.sendEvent(vehicle, newPump)
+            self:updateActionEventTexts(vehicle)
         end
     else
         if not vehicle:getIsTurnedOn() and not vehicle:getCanBeTurnedOn() then
@@ -3251,6 +3652,7 @@ function SlurryPipeManager:onArmDisconnected(vehicle, arm) self:stopFlow(vehicle
 -- Action handlers
 -- ---------------------------------------------------------------------------
 function SlurryPipeManager:onActionToggleFlow(vehicle)
+    SlurryPipeManager.log("onActionToggleFlow: %s", tostring(vehicle and vehicle.configFileName))
     local state = self:getVehicleState(vehicle)
     if state == nil then return end
     -- MA: hydraulic hoses must be connected to open the valve
@@ -3278,7 +3680,12 @@ function SlurryPipeManager:onActionToggleFlow(vehicle)
         SlurryFlowStateEvent.sendEvent(vehicle, newOpen)
         self:updateActionEventTexts(vehicle)
     else
-        SlurryFlowStateEvent.sendEvent(vehicle, not state.valveOpen)
+        -- MP CLIENT: apply locally (server rebroadcast excludes the sender), else the
+        -- next toggle recomputes from stale valveOpen and the valve gets stuck.
+        local newOpen = not state.valveOpen
+        state.valveOpen = newOpen
+        SlurryFlowStateEvent.sendEvent(vehicle, newOpen)
+        self:updateActionEventTexts(vehicle)
     end
 end
 
@@ -3289,6 +3696,7 @@ end
 -- Routed through here from both onActionToggleDirection (host) and
 -- SlurryFlowDirectionEvent:run (dedicated server / client direction sync).
 function SlurryPipeManager:applyDirectionAndPurge(vehicle, newDir)
+    SlurryPipeManager.log("applyDirectionAndPurge: %s newDir=%s", tostring(vehicle and vehicle.configFileName), tostring(newDir))
     local state = self:getVehicleState(vehicle)
     if state == nil then return end
     state.direction = newDir
@@ -3300,11 +3708,27 @@ function SlurryPipeManager:applyDirectionAndPurge(vehicle, newDir)
 end
 
 function SlurryPipeManager:onActionToggleDirection(vehicle)
+    SlurryPipeManager.log("onActionToggleDirection: %s", tostring(vehicle and vehicle.configFileName))
     local state = self:getVehicleState(vehicle)
     if state == nil then return end
     if state.valveOpen then
         if vehicle.isClient then g_currentMission:showBlinkingWarning(g_i18n:getText("warning_slurryCloseFlowFirst"), 2000) end
         return
+    end
+    -- MA/Bayern: when direction is set from the CAB (no outside <directionControl>
+    -- node), hoses must be connected to change it — same gate as the valves. Vehicles
+    -- with an outside direction control reach this handler only via the outside
+    -- activatable (SPSPumpControlActivatable / SPSOutsideControlActivatable) and are
+    -- intentionally left ungated, so direction can be set at the node with or without
+    -- pipes. vehicleHasOutsideDirectionControl is the exact split: it is false only for
+    -- cab-controlled tankers, which are the only ones the cab action is registered for.
+    if not self:vehicleHasOutsideDirectionControl(vehicle) then
+        if not SlurryPipeSystemOverride.isHydraulicsConnected(vehicle) then
+            if vehicle.isClient then
+                g_currentMission:showBlinkingWarning(g_i18n:getText("warning_spsConnectHydraulics"), 2000)
+            end
+            return
+        end
     end
     local newDir = (state.direction == SPS_DIRECTION_FILL) and SPS_DIRECTION_DISCHARGE or SPS_DIRECTION_FILL
     if g_server ~= nil then
@@ -3312,7 +3736,12 @@ function SlurryPipeManager:onActionToggleDirection(vehicle)
         SlurryFlowDirectionEvent.sendEvent(vehicle, newDir)
         self:updateActionEventTexts(vehicle)
     else
+        -- MP CLIENT: apply locally (server rebroadcast excludes the sender). The purge
+        -- arming inside applyDirectionAndPurge is server-gated, so the client only
+        -- updates state.direction here.
+        self:applyDirectionAndPurge(vehicle, newDir)
         SlurryFlowDirectionEvent.sendEvent(vehicle, newDir)
+        self:updateActionEventTexts(vehicle)
     end
 end
 
@@ -3486,6 +3915,7 @@ function SlurryPipeManager:getBlockageNodeIndex(vehicle, blockageEntry)
 end
 
 function SlurryPipeManager:setBlockageState(vehicle, blockageEntry, blocked, noEventSend)
+    SlurryPipeManager.log("setBlockageState: %s blocked=%s", tostring(vehicle and vehicle.configFileName), tostring(blocked))
     if blockageEntry == nil or blockageEntry.blocked == blocked then return end
     blockageEntry.blocked = blocked
     self:playBlockageAnimation(vehicle, blockageEntry, blocked)
@@ -3524,6 +3954,7 @@ function SlurryPipeManager:playBlockageAnimation(vehicle, blockageEntry, blocked
 end
 
 function SlurryPipeManager:clearAllBlockages(vehicle)
+    SlurryPipeManager.log("clearAllBlockages: %s", tostring(vehicle and vehicle.configFileName))
     local n = 0
     for _, b in ipairs(self:getBlockageEntries(vehicle)) do
         if b.blocked then self:setBlockageState(vehicle, b, false); n = n + 1 end
@@ -3532,6 +3963,7 @@ function SlurryPipeManager:clearAllBlockages(vehicle)
 end
 
 function SlurryPipeManager:clearNearestBlockage(vehicle, px, py, pz)
+    SlurryPipeManager.log("clearNearestBlockage: %s at (%.2f,%.2f,%.2f)", tostring(vehicle and vehicle.configFileName), px or 0, py or 0, pz or 0)
     local best, bestDist = nil, SlurryPipeManager.BLOCKAGE_CLEAR_RADIUS
     for _, b in ipairs(self:getBlockageEntries(vehicle)) do
         if b.blocked and b.node ~= nil then
@@ -3565,6 +3997,7 @@ end
 -- Player-initiated clear of one specific blockage node (from its walk-up activatable).
 -- Re-checks the stop gate, then clears + syncs via setBlockageState (SPSBlockageEvent).
 function SlurryPipeManager:onClearBlockage(vehicle, blockageEntry)
+    SlurryPipeManager.log("onClearBlockage: %s", tostring(vehicle and vehicle.configFileName))
     if blockageEntry == nil or blockageEntry.blocked ~= true then return end
     if not self:canClearBlockage(vehicle) then return end
     self:setBlockageState(vehicle, blockageEntry, false)
@@ -3574,6 +4007,7 @@ end
 -- Flow session
 -- ---------------------------------------------------------------------------
 function SlurryPipeManager:startFlow(vehicle)
+    SlurryPipeManager.log("startFlow: %s", tostring(vehicle and vehicle.configFileName))
     if self.activeFlows[vehicle] ~= nil then return end
     local session = self:buildFlowSession(vehicle)
     if session ~= nil then
@@ -3583,6 +4017,7 @@ function SlurryPipeManager:startFlow(vehicle)
 end
 
 function SlurryPipeManager:stopFlow(vehicle)
+    SlurryPipeManager.log("stopFlow: %s", tostring(vehicle and vehicle.configFileName))
     if self.activeFlows[vehicle] ~= nil then
         self.activeFlows[vehicle] = nil
     end
@@ -3867,6 +4302,41 @@ function SlurryPipeManager:getPressureFlowScalar(vehicle)
     return math.min(1.0, p / maxP), true
 end
 
+-- True if any connected+open coupling partner of this vehicle is a pressure-model
+-- tanker that is currently building or holding usable pressure/vacuum (pump on, or
+-- |pressure| >= minThreshold). Used to suppress this vehicle's one-way gravity
+-- backflow over a coupling: while the partner is pumping, flow must wait for that
+-- partner's pressure to reach threshold rather than dribbling out by gravity.
+-- Arm connections do not populate couplingEntries, so arms are unaffected; a
+-- coupling to a placeable store resolves no vehicle entry and is ignored.
+function SlurryPipeManager:_couplingPartnerIsPressurising(vehicle)
+    local vEntry = self:getVehicleEntry(vehicle)
+    if vEntry == nil or vEntry.couplingEntries == nil then return false end
+    for _, c in ipairs(vEntry.couplingEntries) do
+        if c.isConnected and c.valveOpen then
+            -- Resolve the partner vehicle (direct connectedTarget, or the far end
+            -- of a chain via the source resolver) so this works for both layouts.
+            local partnerVehicle = c.connectedTarget
+            if partnerVehicle == nil or self:getVehicleEntry(partnerVehicle) == nil then
+                local ps = self:resolveSourceForCouplingPartner(c)
+                partnerVehicle = ps ~= nil and ps.vehicle or partnerVehicle
+            end
+            if partnerVehicle ~= nil then
+                local pe = self:getVehicleEntry(partnerVehicle)
+                if pe ~= nil and pe.state ~= nil then
+                    if self:_isPumpOn(partnerVehicle) then return true end
+                    if self:usesPressureModel(pe) then
+                        local minT = (pe.pressure ~= nil and pe.pressure.minThreshold)
+                            or SlurryPipeManager.DEFAULT_MIN_THRESHOLD
+                        if math.abs(pe.state.pressure or 0) >= minT then return true end
+                    end
+                end
+            end
+        end
+    end
+    return false
+end
+
 -- Resolves the effective pipe/arm flow for a tanker once its valve is confirmed open.
 -- Returns (flowDir, scalar):
 --   flowDir = SPS_DIRECTION_FILL or SPS_DIRECTION_DISCHARGE, or nil for no flow
@@ -3903,6 +4373,22 @@ function SlurryPipeManager:resolveCouplingFlow(vehicle, state, pumpRunning, hasC
     -- Pressure spent (|pressure| < minThreshold) and the PTO is not replenishing it:
     -- gravity backflow OUT while slurry remains.
     if not pumpRunning and hasContent then
+        -- Head equalisation owns this vehicle this window: defer the one-way
+        -- gravity drain so the two mechanisms never move the same slurry.
+        if state ~= nil and state._equaliseActive then return nil, 0.0 end
+        -- A coupling partner is building/holding pressure or vacuum: flow must wait
+        -- for that partner to reach minThreshold, so suppress gravity backflow.
+        -- (This is the "press B on the vac tank -> nothing moves until vacuum is
+        -- built" behaviour; without it the pump-off partner dribbles out by gravity.)
+        if self:_couplingPartnerIsPressurising(vehicle) then
+            if SlurryPipeManager.DEBUG and state ~= nil and state._eqGravSuppressed ~= true then
+                state._eqGravSuppressed = true
+                SlurryPipeManager.log("resolveCouplingFlow: gravity suppressed on %s (coupling partner pressurising)",
+                    tostring(vehicle and vehicle.configFileName))
+            end
+            return nil, 0.0
+        end
+        if state ~= nil then state._eqGravSuppressed = false end
         local entry = self:getVehicleEntry(vehicle)
         local g = SlurryPipeManager.DEFAULT_GRAVITY_FLOW_SCALAR
         if entry ~= nil and entry.pressure ~= nil and entry.pressure.gravityFlowScalar ~= nil then
@@ -3916,7 +4402,381 @@ function SlurryPipeManager:resolveCouplingFlow(vehicle, state, pumpRunning, hasC
     return nil, 0.0
 end
 
+-- ---------------------------------------------------------------------------
+-- Hydraulic head equalisation between two directly-coupled tankers
+--
+-- When two tankers (or a tanker and a passive open-top vessel) are joined by a
+-- direct/strap coupling, BOTH coupling valves are open, and NEITHER side is
+-- building or holding pressure/vacuum (pumps off, |pressure| < minThreshold),
+-- slurry runs from the higher surface to the lower surface under gravity until
+-- both surfaces sit at the same WORLD height. Because the driving signal is
+-- surface Y (head), two tanks of different capacity settle at equal head, not
+-- equal litres. The same path moves water (WATER<->WATER) unchanged.
+--
+-- The instant either side builds vacuum (pull) or pressure (push), this stands
+-- down: the existing pressure model in resolveCouplingFlow then owns the flow,
+-- so a vacuum drains the partner past equilibrium and pressure pushes it back.
+--
+-- Server-authoritative and THROTTLED (a fixed cadence, not every frame), so it
+-- never spikes the main thread. Fill-unit levels replicate to clients via the
+-- vanilla FillUnit sync, exactly like the conduit transfer path it mirrors.
+--
+-- Scope: direct vehicle<->vehicle couplings only. Chain-pipe layouts are
+-- deferred until chain server-sync exists (chain isConnected stays client-local
+-- server-side, so no flow could be authoritative over a chain yet).
+-- ---------------------------------------------------------------------------
+SlurryPipeManager.EQUALISE_INTERVAL_MS   = 150      -- throttle cadence (ms)
+SlurryPipeManager.EQUALISE_HEAD_DEADBAND = 0.0015   -- m (~1.5 mm): level, stop
+SlurryPipeManager.EQUALISE_TAPER_HEAD    = 0.30     -- m: head over which rate -> full
+
+-- Surface world-Y for a FILL_VOLUME or STORAGE_PLANE source, or nil when the
+-- source carries no readable surface (e.g. a bare FILL_UNIT_ONLY tank).
+function SlurryPipeManager:_equaliseSampleSurfaceY(srcEntry)
+    if srcEntry == nil then return nil end
+    local node
+    if srcEntry.type == SlurryNodeUtil.SOURCE_TYPE_FILL_VOLUME then
+        node = srcEntry.baseNode or srcEntry.volumeNode
+    elseif srcEntry.type == SlurryNodeUtil.SOURCE_TYPE_STORAGE_PLANE then
+        node = srcEntry.fillPlaneNode
+    else
+        return nil
+    end
+    if node == nil or node == 0 or not entityExists(node) then return nil end
+    local wx, _, wz = getWorldTranslation(node)
+    local y = SlurryNodeUtil.getSurfaceWorldY(srcEntry, wx, wz)
+    if y == -math.huge then return nil end
+    return y
+end
+
+-- A side is "neutral" (gravity may move its contents) when it is NOT actively
+-- building/holding usable pressure or vacuum. Pressure-model vehicles are neutral
+-- only with the pump off, not purging, and stored pressure below threshold.
+-- Non-pressure sides (open-top FRC, conduit) are always neutral.
+-- Is this vehicle's pump actually running? Mirrors tickFlow's detection exactly:
+-- a self-powered tanker uses state.pumpRunning; a TOWED tanker (tractor PTO) uses
+-- the engine turn-on state. Checking only state.pumpRunning misses towed tankers,
+-- which is why a towed vac tanker would start moving fluid the instant the PTO
+-- engaged instead of waiting for pressure to build.
+function SlurryPipeManager:_isPumpOn(vehicle)
+    if vehicle == nil then return false end
+    if self:isVehicleSelfPowered(vehicle) then
+        local state = self:getVehicleState(vehicle)
+        return state ~= nil and state.pumpRunning == true
+    end
+    return vehicle.getIsTurnedOn ~= nil and vehicle:getIsTurnedOn() == true
+end
+
+function SlurryPipeManager:_equaliseSideIsNeutral(vehicle)
+    if vehicle == nil then return true end
+    local entry = self:getVehicleEntry(vehicle)
+    if entry == nil then return true end
+    if not self:usesPressureModel(entry) then return true end
+    local state = entry.state
+    if state == nil then return true end
+    if self:_isPumpOn(vehicle) then return false end
+    if state.purging == true then return false end
+    local cfg  = entry.pressure
+    local minT = (cfg ~= nil and cfg.minThreshold) or SlurryPipeManager.DEFAULT_MIN_THRESHOLD
+    if math.abs(state.pressure or 0) >= minT then return false end
+    return true
+end
+
+-- Current fill level held in a source for the given type.
+function SlurryPipeManager:_equaliseSourceLevel(srcEntry, fillType)
+    if srcEntry == nil then return 0 end
+    if srcEntry.type == SlurryNodeUtil.SOURCE_TYPE_FILL_VOLUME or srcEntry.type == "FILL_UNIT_ONLY" then
+        if srcEntry.vehicle ~= nil then
+            return srcEntry.vehicle:getFillUnitFillLevel(srcEntry.fillUnitIndex) or 0
+        end
+    elseif srcEntry.type == SlurryNodeUtil.SOURCE_TYPE_STORAGE_PLANE then
+        if srcEntry.storage ~= nil then
+            return srcEntry.storage:getFillLevel(fillType) or 0
+        end
+    end
+    return 0
+end
+
+-- Free capacity in a destination for the given type.
+function SlurryPipeManager:_equaliseDestFree(dstEntry, fillType)
+    if dstEntry == nil then return 0 end
+    if dstEntry.type == SlurryNodeUtil.SOURCE_TYPE_FILL_VOLUME or dstEntry.type == "FILL_UNIT_ONLY" then
+        if dstEntry.vehicle ~= nil then
+            local cap   = dstEntry.vehicle:getFillUnitCapacity(dstEntry.fillUnitIndex) or 0
+            local level = dstEntry.vehicle:getFillUnitFillLevel(dstEntry.fillUnitIndex) or 0
+            return cap - level
+        end
+    elseif dstEntry.type == SlurryNodeUtil.SOURCE_TYPE_STORAGE_PLANE then
+        if dstEntry.storage ~= nil then
+            return dstEntry.storage:getFreeCapacity(fillType) or 0
+        end
+    end
+    return 0
+end
+
+-- Returns a FILL_VOLUME source for head reads, building one on demand. The cached
+-- source from resolveVehicleSource may be FILL_UNIT_ONLY (e.g. it resolved before
+-- the fill-volume was ready and the result is cached permanently). For head
+-- equalisation we need a real fill plane, so if the cache is not a FILL_VOLUME we
+-- try to build one fresh and remember it on the entry. Returns nil if the vehicle
+-- genuinely has no usable fill volume.
+function SlurryPipeManager:_equaliseHeadSource(vehicle, cached)
+    if cached ~= nil and cached.type == SlurryNodeUtil.SOURCE_TYPE_FILL_VOLUME then
+        return cached
+    end
+    local e = self:getVehicleEntry(vehicle)
+    if e ~= nil and e._eqHeadSource ~= nil then
+        return e._eqHeadSource
+    end
+    if vehicle ~= nil and vehicle.spec_fillVolume ~= nil then
+        local fui = (cached ~= nil and cached.fillUnitIndex) or 1
+        local fv  = SlurryNodeUtil.buildFillVolumeSource(vehicle, fui)
+        if fv ~= nil then
+            if e ~= nil then e._eqHeadSource = fv end
+            SlurryPipeManager.log("equalise: built on-demand FILL_VOLUME head source for %s (fui=%d)",
+                tostring(vehicle.configFileName), fui)
+            return fv
+        end
+    end
+    return nil
+end
+
+-- World-Y of the slurry surface for a vehicle, for head equalisation.
+-- Priority:
+--   1) authored surfaceRef (empty/full nodes): lerp(emptyY, fullY, level/capacity).
+--      Works for opaque tanks (no fill volume) and is valid server-side. Both
+--      sides of a coupling use this when both have a ref, so heads compare cleanly.
+--   2) a real fill volume (FRC65 etc. with one) via getSurfaceWorldY.
+-- Returns nil if neither is available.
+function SlurryPipeManager:_equaliseSurfaceWorldY(vehicle, srcEntry)
+    local entry = self:getVehicleEntry(vehicle)
+    if entry ~= nil and entry.surfaceRef ~= nil then
+        local sr = entry.surfaceRef
+        if sr.emptyNode ~= nil and sr.fullNode ~= nil
+        and entityExists(sr.emptyNode) and entityExists(sr.fullNode)
+        and vehicle ~= nil and vehicle.getFillUnitCapacity ~= nil then
+            local fui = (srcEntry ~= nil and srcEntry.fillUnitIndex) or 1
+            local cap = vehicle:getFillUnitCapacity(fui) or 0
+            local lvl = vehicle:getFillUnitFillLevel(fui) or 0
+            local frac = (cap > 0) and math.clamp(lvl / cap, 0, 1) or 0
+            local _, eY, _ = getWorldTranslation(sr.emptyNode)
+            local _, fY, _ = getWorldTranslation(sr.fullNode)
+            return eY + (fY - eY) * frac
+        end
+    end
+    -- Fallback: real fill volume (build on demand if the cache is FILL_UNIT_ONLY).
+    local headSrc = self:_equaliseHeadSource(vehicle, srcEntry)
+    if headSrc ~= nil then
+        return self:_equaliseSampleSurfaceY(headSrc)
+    end
+    return nil
+end
+
+-- Equalise one coupled pair for this pass. Marks both sides _equaliseActive so
+-- resolveCouplingFlow defers its one-way gravity drain to us this window.
+--
+-- DIAGNOSTICS: every early-return reports a reason, change-gated on entryA.state
+-- so it prints when the reason changes (not every 150 ms pass). Watch the log key
+-- "[SPS PM] equalise" — the eval line shows yA/yB/dY and both fill levels so a
+-- collapsed dY (surfaces read equal) or a silent gate is immediately visible.
+function SlurryPipeManager:_equalisePair(entryA, couplingA, entryB, couplingB, passSec)
+    local vehA, vehB = entryA.vehicle, entryB.vehicle
+
+    -- Change-gated reason logger: prints once when the bail reason changes.
+    local function bail(reason)
+        if SlurryPipeManager.DEBUG and entryA.state ~= nil and entryA.state._eqLastReason ~= reason then
+            entryA.state._eqLastReason = reason
+            SlurryPipeManager.log("equalise.skip: %s <-> %s reason=%s",
+                tostring(vehA and vehA.configFileName), tostring(vehB and vehB.configFileName), reason)
+        end
+    end
+
+    -- Both sides must be neutral; otherwise the pressure model owns the flow.
+    if not self:_equaliseSideIsNeutral(vehA) then return bail("A_not_neutral") end
+    if not self:_equaliseSideIsNeutral(vehB) then return bail("B_not_neutral") end
+
+    local srcA = self:resolveVehicleSource(vehA)
+    local srcB = self:resolveVehicleSource(vehB)
+    if srcA == nil then return bail("A_src_nil") end
+    if srcB == nil then return bail("B_src_nil") end
+
+    -- Head via authored surfaceRef (preferred) or a real fill volume.
+    local yA = self:_equaliseSurfaceWorldY(vehA, srcA)
+    local yB = self:_equaliseSurfaceWorldY(vehB, srcB)
+    if yA == nil then return bail("A_surfaceY_nil(noRef&noVolume)") end
+    if yB == nil then return bail("B_surfaceY_nil(noRef&noVolume)") end
+
+    -- Own the pair this window (suppresses gravity backflow on both sides).
+    if entryA.state ~= nil then entryA.state._equaliseActive = true end
+    if entryB.state ~= nil then entryB.state._equaliseActive = true end
+
+    -- Levels for diagnostics (both sides, raw fill-unit level).
+    local lvlA = vehA and vehA.getFillUnitFillLevel and (vehA:getFillUnitFillLevel(srcA.fillUnitIndex) or 0) or -1
+    local lvlB = vehB and vehB.getFillUnitFillLevel and (vehB:getFillUnitFillLevel(srcB.fillUnitIndex) or 0) or -1
+    local dY = math.abs(yA - yB)
+
+    -- Eval line, change-gated on a coarse signature so it prints on meaningful
+    -- change (every ~5 mm of head or ~50 L of level), never every pass.
+    if SlurryPipeManager.DEBUG and entryA.state ~= nil then
+        local sig = string.format("%.0f|%.0f|%.0f", dY * 200, lvlA / 50, lvlB / 50)
+        if entryA.state._eqLastSig ~= sig then
+            entryA.state._eqLastSig = sig
+            SlurryPipeManager.log("equalise.eval: %s yA=%.3f lvlA=%.0f | %s yB=%.3f lvlB=%.0f | dY=%.3fm (deadband=%.4fm)",
+                tostring(vehA and vehA.configFileName), yA, lvlA,
+                tostring(vehB and vehB.configFileName), yB, lvlB,
+                dY, SlurryPipeManager.EQUALISE_HEAD_DEADBAND)
+        end
+    end
+
+    if dY <= SlurryPipeManager.EQUALISE_HEAD_DEADBAND then
+        -- Surfaces level. Log the settle once on the moving->settled transition.
+        if (entryA.state ~= nil and entryA.state._eqWasMoving)
+        or (entryB.state ~= nil and entryB.state._eqWasMoving) then
+            SlurryPipeManager.log("equalise: settled dY=%.1fmm lvlA=%.0f lvlB=%.0f", dY * 1000, lvlA, lvlB)
+        end
+        if entryA.state ~= nil then entryA.state._eqWasMoving = false end
+        if entryB.state ~= nil then entryB.state._eqWasMoving = false end
+        return
+    end
+
+    -- Orient high -> low.
+    local hiEntry, loEntry, hiSrc, loSrc, hiCoupling, loCoupling
+    if yA > yB then
+        hiEntry, loEntry       = entryA, entryB
+        hiSrc,   loSrc         = srcA,   srcB
+        hiCoupling, loCoupling = couplingA, couplingB
+    else
+        hiEntry, loEntry       = entryB, entryA
+        hiSrc,   loSrc         = srcB,   srcA
+        hiCoupling, loCoupling = couplingB, couplingA
+    end
+
+    -- Honour coupling flowDirection restrictions against the resolved direction.
+    if hiCoupling.flowDirection == "FILL" then return bail("hi_flowDir_FILL_only") end
+    if loCoupling.flowDirection == "DISCHARGE" then return bail("lo_flowDir_DISCHARGE_only") end
+
+    -- fillType comes from the high (source) side; the low side must accept it so
+    -- slurry and water never equalise into each other.
+    local fillType = self:_resolveSourceFillType(hiSrc)
+    if fillType == nil then return bail("hi_fillType_nil(srcLevel<=0?)") end
+    if not self:_destAcceptsFillType(loSrc, fillType) then return bail("lo_rejects_fillType=" .. tostring(fillType)) end
+
+    local sourceLevel = self:_equaliseSourceLevel(hiSrc, fillType)
+    local destFree    = self:_equaliseDestFree(loSrc, fillType)
+    if sourceLevel <= 0 then return bail("hi_sourceLevel<=0") end
+    if destFree <= 0 then return bail("lo_destFree<=0") end
+    if entryA.state ~= nil then entryA.state._eqLastReason = nil end
+
+    -- Tapered rate: full configured rate beyond TAPER_HEAD, scaling to zero as the
+    -- surfaces converge. Taper + dead-band prevent overshoot for any tank geometry.
+    local outRate = hiEntry.emptyLitersPerSecond or hiEntry.litersPerSecond or SlurryPipeManager.DEFAULT_LITERS_PER_SECOND
+    local inRate  = loEntry.fillLitersPerSecond  or loEntry.litersPerSecond  or SlurryPipeManager.DEFAULT_LITERS_PER_SECOND
+    local rate    = math.min(outRate, inRate)
+    local taper   = math.min(1.0, dY / SlurryPipeManager.EQUALISE_TAPER_HEAD)
+
+    local amount = rate * passSec * taper
+    amount = math.min(amount, sourceLevel, destFree)
+    if amount <= 0 then return bail("amount<=0") end
+
+    -- Log the start once on the settled->moving transition.
+    if (hiEntry.state ~= nil and not hiEntry.state._eqWasMoving) then
+        SlurryPipeManager.log("equalise: start hi=%s lo=%s dY=%.3fm fillType=%d",
+            tostring(hiEntry.vehicle and hiEntry.vehicle.configFileName),
+            tostring(loEntry.vehicle and loEntry.vehicle.configFileName), dY, fillType)
+    end
+    if hiEntry.state ~= nil then hiEntry.state._eqWasMoving = true end
+    if loEntry.state ~= nil then loEntry.state._eqWasMoving = true end
+
+    self:removeFromSource(hiSrc, amount, fillType, hiEntry.vehicle)
+    self:addToSource(loSrc, amount, fillType, loEntry.vehicle)
+end
+
+-- Server-only, throttled driver. Discovers directly-coupled vehicle pairs whose
+-- valves are both open and equalises each by head.
+function SlurryPipeManager:updateLevelEqualise(dt)
+    if g_server == nil then return end
+
+    self._equaliseAccum = (self._equaliseAccum or 0) + dt
+    if self._equaliseAccum < SlurryPipeManager.EQUALISE_INTERVAL_MS then return end
+    local passSec = self._equaliseAccum * 0.001
+    self._equaliseAccum = 0
+
+    -- Clear the per-vehicle equalise flag, then set it below for vehicles whose
+    -- coupling is currently equalising. resolveCouplingFlow reads it to suppress
+    -- the one-way gravity drain so the two mechanisms never move the same slurry.
+    for _, vEntry in ipairs(self.registeredVehicles) do
+        if vEntry.state ~= nil then vEntry.state._equaliseActive = false end
+    end
+
+    -- Reusable visited set (cleared, not reallocated). Keyed by an unordered
+    -- vehicle-id pair so a pair joined by two couplings (or both ends of a chain)
+    -- is processed once per pass.
+    local visited = self._equaliseVisited
+    if visited == nil then
+        visited = {}
+        self._equaliseVisited = visited
+    else
+        for k in pairs(visited) do visited[k] = nil end
+    end
+
+    local pairCount = 0
+    local connOpenCount = 0   -- connected couplings with valve open (diagnostic)
+    for _, vEntry in ipairs(self.registeredVehicles) do
+        local vehA = vEntry.vehicle
+        for _, c in ipairs(vEntry.couplingEntries) do
+            if c.isConnected and c.valveOpen then
+                connOpenCount = connOpenCount + 1
+                -- Resolve the far-end source for this coupling. This walks a chain
+                -- to its anchor when the partner is a chain terminus, so the same
+                -- path covers direct couplings AND chain-pipe layouts. (In MP this
+                -- needs the chain connection visible server-side; single-player is
+                -- fine. Returns nil server-side on a dedicated server for chains.)
+                local partnerSrc = self:resolveSourceForCouplingPartner(c)
+                local partnerVehicle = partnerSrc ~= nil and partnerSrc.vehicle or nil
+                local skip = nil
+                if partnerSrc == nil then
+                    skip = "partner_src_nil(chain not resolvable / not connected server-side)"
+                elseif partnerVehicle == nil then
+                    skip = "partner_not_vehicle(store/unknown)"
+                elseif partnerVehicle == vehA then
+                    skip = "partner_is_self"
+                else
+                    local entryB = self:getVehicleEntry(partnerVehicle)
+                    if entryB == nil then
+                        skip = "partner_not_registered"
+                    else
+                        local idA = vehA.id or 0
+                        local idB = partnerVehicle.id or 0
+                        local key = (idA < idB) and (idA .. ":" .. idB) or (idB .. ":" .. idA)
+                        if not visited[key] then
+                            visited[key] = true
+                            pairCount = pairCount + 1
+                            -- couplingB (partner) is used only for flowDirection; the
+                            -- connectedPartnerCoupling is the partner coupling (direct)
+                            -- or the chain terminus (chain) — either is fine.
+                            self:_equalisePair(vEntry, c, entryB, c.connectedPartnerCoupling, passSec)
+                        end
+                    end
+                end
+                if SlurryPipeManager.DEBUG and skip ~= nil and c._eqDiscReason ~= skip then
+                    c._eqDiscReason = skip
+                    SlurryPipeManager.log("updateLevelEqualise.discover: couplingId=%s on %s NOT paired — %s",
+                        tostring(c.id), tostring(vehA and vehA.configFileName), skip)
+                end
+            end
+        end
+    end
+
+    -- Change-gated so we see when equalise pairs appear/disappear, never per pass.
+    if SlurryPipeManager.DEBUG
+    and (self._eqLastPairCount ~= pairCount or self._eqLastConnOpen ~= connOpenCount) then
+        self._eqLastPairCount = pairCount
+        self._eqLastConnOpen  = connOpenCount
+        SlurryPipeManager.log("updateLevelEqualise: openCouplings=%d activePairs=%d", connOpenCount, pairCount)
+    end
+end
+
 function SlurryPipeManager:buildFlowSession(vehicle)
+    SlurryPipeManager.log("buildFlowSession: %s", tostring(vehicle and vehicle.configFileName))
     local fillLPS  = SlurryPipeManager.DEFAULT_LITERS_PER_SECOND
     local emptyLPS = SlurryPipeManager.DEFAULT_LITERS_PER_SECOND
     local vehicleFillUnit = 1
@@ -4119,6 +4979,7 @@ end
 -- Find first overlapping coupling within connection distance
 -- ---------------------------------------------------------------------------
 function SlurryPipeManager:findOverlappingCoupler(coupling)
+    SlurryPipeManager.log("findOverlappingCoupler: from couplingId=%s", tostring(coupling and coupling.id))
     -- Already connected — no new connection possible
     if coupling.isConnected then return nil end
     local apexA, arc1A, arc2A = self:_getCouplingArcNodes(coupling)
@@ -4291,8 +5152,19 @@ end
 -- Called from SPSPipeActivatable. Authority check here.
 -- ---------------------------------------------------------------------------
 function SlurryPipeManager:onCouplerConnect(vehicle, coupling)
+    SlurryPipeManager.log("onCouplerConnect: %s couplingId=%s server=%s", tostring(vehicle and vehicle.configFileName), tostring(coupling and coupling.id), tostring(g_server ~= nil))
     if g_server == nil then
-        SlurryPipeConnectEvent.sendEvent(vehicle, nil, 0, coupling.id, 0)
+        local otherCoupling = self:findOverlappingCoupler(coupling)
+        if otherCoupling == nil then return end
+        if coupling.isConnected or otherCoupling.isConnected then return end
+        local ownerA = vehicle or coupling.placeable
+        local tVeh, tPl = self:_findCouplingOwner(otherCoupling)
+        local ownerB = tVeh or tPl
+        local targetType = tVeh ~= nil
+            and SlurryPipeConnectEvent.TARGET_TYPE_VEHICLE
+            or  SlurryPipeConnectEvent.TARGET_TYPE_PLACEABLE
+        self:applyConnectCouplings(coupling, otherCoupling, ownerA, ownerB)
+        SlurryPipeConnectEvent.sendEvent(vehicle or ownerA, ownerB, targetType, coupling.id, otherCoupling.id)
         return
     end
 
@@ -4332,6 +5204,7 @@ end
 -- applyConnectCouplings — called locally with the actual coupling objects.
 -- Avoids the ID lookup ambiguity that breaks placeable-initiated connections.
 function SlurryPipeManager:applyConnectCouplings(couplingA, couplingB, ownerA, ownerB)
+    SlurryPipeManager.log("applyConnectCouplings: A.id=%s B.id=%s", tostring(couplingA and couplingA.id), tostring(couplingB and couplingB.id))
 --    print("[SPS TRACE] ===== applyConnectCouplings =====")
     self:_traceCoupling("applyConnect.couplingA", couplingA)
     self:_traceCoupling("applyConnect.couplingB", couplingB)
@@ -4458,6 +5331,7 @@ function SlurryPipeManager:applyConnectCouplings(couplingA, couplingB, ownerA, o
 end
 
 function SlurryPipeManager:onCouplerDisconnect(vehicle, coupling)
+    SlurryPipeManager.log("onCouplerDisconnect: %s couplingId=%s valveOpen=%s", tostring(vehicle and vehicle.configFileName), tostring(coupling and coupling.id), tostring(coupling and coupling.valveOpen))
     -- Valve must be closed
     if coupling.valveOpen then
         if g_currentMission ~= nil then
@@ -4468,6 +5342,7 @@ function SlurryPipeManager:onCouplerDisconnect(vehicle, coupling)
 
 
     if g_server == nil then
+        self:applyDisconnect(vehicle, coupling.id, coupling)
         SlurryPipeDisconnectEvent.sendEvent(vehicle, coupling.id)
         return
     end
@@ -4481,6 +5356,7 @@ end
 -- applyDisconnect: couplingObj is the actual coupling table when available (local path).
 -- The network event path passes only vehicle+couplingId, which falls back to id search.
 function SlurryPipeManager:applyDisconnect(vehicle, couplingId, couplingObj)
+    SlurryPipeManager.log("applyDisconnect: %s couplingId=%s", tostring(vehicle and vehicle.configFileName), tostring(couplingId))
     local coupling = couplingObj
     if coupling == nil then
         coupling = self:_findCouplingById(vehicle, couplingId, false)
@@ -4577,6 +5453,7 @@ function SlurryPipeManager:applyDisconnect(vehicle, couplingId, couplingObj)
 end
 
 function SlurryPipeManager:onValveOpen(vehicle, coupling)
+    SlurryPipeManager.log("onValveOpen: %s couplingId=%s", tostring(vehicle and vehicle.configFileName), tostring(coupling and coupling.id))
     if not coupling.isConnected then return end
     if coupling.valveOpen then return end
 
@@ -4595,6 +5472,7 @@ function SlurryPipeManager:onValveOpen(vehicle, coupling)
 end
 
 function SlurryPipeManager:onValveClose(vehicle, coupling)
+    SlurryPipeManager.log("onValveClose: %s couplingId=%s", tostring(vehicle and vehicle.configFileName), tostring(coupling and coupling.id))
     if not coupling.isConnected then return end
     if not coupling.valveOpen then return end
 
@@ -4614,6 +5492,7 @@ end
 -- Walk a chain to find the coupling at the opposite end from the given coupling,
 -- then apply and broadcast the valve state to it.
 function SlurryPipeManager:_propagateValveState(coupling, open)
+    SlurryPipeManager.log("_propagateValveState: couplingId=%s open=%s", tostring(coupling and coupling.id), tostring(open))
     local partner = coupling.connectedPartnerCoupling
     if partner == nil then
         return
@@ -4662,6 +5541,7 @@ end
 -- Force-disconnect regardless of valve state — used when vehicle is unregistered
 -- or auto-disconnected by distance. Closes valve first then disconnects.
 function SlurryPipeManager:_forceDisconnect(vehicle, coupling)
+    SlurryPipeManager.log("_forceDisconnect: %s couplingId=%s", tostring(vehicle and vehicle.configFileName), tostring(coupling and coupling.id))
     if not coupling.isConnected then return end
     -- Close valve first so applyDisconnect doesn't refuse
     if coupling.valveOpen then
@@ -4675,6 +5555,7 @@ function SlurryPipeManager:_forceDisconnect(vehicle, coupling)
 end
 
 function SlurryPipeManager:applyConnect(vehicleA, targetObject, targetType, couplingIdA, couplingIdB)
+    SlurryPipeManager.log("applyConnect: idA=%s idB=%s targetType=%s", tostring(couplingIdA), tostring(couplingIdB), tostring(targetType))
     -- Find couplingA — vehicle may be nil if the initiator was a placeable
     local couplingA
     if vehicleA ~= nil then
@@ -4716,6 +5597,7 @@ function SlurryPipeManager:applyConnect(vehicleA, targetObject, targetType, coup
 end
 
 function SlurryPipeManager:applyValveState(vehicle, couplingId, isOpen, couplingObj)
+    SlurryPipeManager.log("applyValveState: %s couplingId=%s isOpen=%s", tostring(vehicle and vehicle.configFileName), tostring(couplingId), tostring(isOpen))
     -- Object-first: when caller has the coupling table, use it directly to avoid
     -- id ambiguity across multiple placeables that share coupling ids.
     local coupling = couplingObj
@@ -4961,6 +5843,11 @@ function SlurryPipeManager:updatePressure(dt)
             end
             if math.abs((state._lastLoggedPressure or 999) - p) >= 0.1 then
                 state._lastLoggedPressure = p
+                SlurryPipeManager.log("pressure: %s p=%.2f dir=%s pump=%s purge=%s valve=%s content=%s ratio=%.2f",
+                    tostring(vehicle.configFileName), p,
+                    tostring(state.direction), tostring(state.pumpRunning),
+                    tostring(state.purging), tostring(valveOpen),
+                    tostring(hasContent), fillRatio)
                 --SlurryDebug.log(string.format("[SPS PRESSURE] %s p=%.2f dir=%s pump=%s purge=%s valve=%s content=%s ratio=%.2f",
                 --    tostring(vehicle.configFileName), p,
                 --    tostring(state.direction), tostring(state.pumpRunning),
@@ -5582,6 +6469,11 @@ function SlurryPipeManager:update(dt)
         end
     end
  
+    -- Hydraulic head equalisation between directly-coupled tankers. Runs before
+    -- the flow sessions below so the _equaliseActive flag it sets is fresh when
+    -- tickFlow -> resolveCouplingFlow reads it this frame. Server-only + throttled.
+    self:updateLevelEqualise(dt)
+
     -- Sync sessions with valve state
     -- Arms: session when cab valve open
     -- Couplings: session when coupling manual valve open (state.valveOpen not used)
@@ -5734,6 +6626,11 @@ function SlurryPipeManager:detectArmConnection(vehicle, entry, arm)
     local direction = state and state.direction or SPS_DIRECTION_FILL
     local tipType   = arm.tipType or SPS_TIP_TYPE_OPEN_PIT
 
+    -- [SPS ARMDIAG] throttled, read-only. Logs only while the cab valve is open.
+    arm._spsDiagN = (arm._spsDiagN or 0) + 1
+    --local diagOn  = (state ~= nil and state.valveOpen == true) and (arm._spsDiagN % 10 == 0)
+	local diagOn  = false
+	
     local newConnected    = false
     local foundSource     = nil
     local foundBootPort   = nil
@@ -5840,12 +6737,56 @@ function SlurryPipeManager:detectArmConnection(vehicle, entry, arm)
         end
     end
 
+    if diagOn then
+        local cx, cy, cz = 0, 0, 0
+        if arm.centreNode ~= nil and entityExists(arm.centreNode) then
+            cx, cy, cz = getWorldTranslation(arm.centreNode)
+        end
+        -- Evaluate the REAL xz-bounds test + surface check per source (mirrors detection).
+        local parts = {}
+        for si, se in ipairs(self.sourceEntries) do
+            if se.vehicle ~= vehicle then
+                local xzOk = false
+                if se.type == SlurryNodeUtil.SOURCE_TYPE_STORAGE_PLANE then
+                    local b = se.planeBounds
+                    if b ~= nil then
+                        if b.shape == "round" and b.centreNode ~= nil then
+                            local bx, _, bz = getWorldTranslation(b.centreNode)
+                            local dx, dz = cx - bx, cz - bz
+                            xzOk = (dx*dx + dz*dz) <= (b.radius * b.radius)
+                        elseif b.shape == "rectangle" and b.centreNode ~= nil then
+                            local lx, _, lz = worldToLocal(b.centreNode, cx, cy, cz)
+                            xzOk = lx >= b.minX and lx <= b.maxX and lz >= b.minZ and lz <= b.maxZ
+                        end
+                    end
+                elseif se.type == SlurryNodeUtil.SOURCE_TYPE_FILL_VOLUME and se.baseNode ~= nil then
+                    local bx, _, bz = getWorldTranslation(se.baseNode)
+                    local dx, dz = cx - bx, cz - bz
+                    local r = SlurryPipeManager.FILL_VOLUME_SEARCH_RADIUS
+                    xzOk = (dx*dx + dz*dz) <= (r*r)
+                end
+                local sy = SlurryNodeUtil.getSurfaceWorldY(se, cx, cz)
+                local submerged = (sy ~= -math.huge) and (sy > cy + 0.08)
+                parts[#parts+1] = string.format("#%d[%s xz=%s surfY=%.2f sub=%s]",
+                    si, tostring(se.type), tostring(xzOk), sy, tostring(submerged))
+            end
+        end
+        --print(string.format(
+        --    "[SPS ARMDIAG] arm id=%s tip=%s dir=%s centre=(%.2f,%.2f,%.2f) sources=%d boots=%d %s -> connected=%s",
+        --    tostring(arm.id), tostring(tipType), tostring(direction), cx, cy, cz,
+        --    #self.sourceEntries, #self.rubberBootPortEntries,
+        --    table.concat(parts, " "), tostring(newConnected)))
+    end
+
     local prevConnected   = arm.isConnected
     arm.isConnected       = newConnected
     arm.connectedSource   = foundSource
     arm.connectedBootPort = foundBootPort
 
     if prevConnected ~= newConnected then
+        SlurryPipeManager.log("detectArmConnection: %s arm %s -> %s",
+            tostring(vehicle and vehicle.configFileName), tostring(prevConnected),
+            newConnected and "CONNECTED" or "DISCONNECTED")
         if newConnected then
             self:onArmConnected(vehicle, arm)
         else
@@ -5853,7 +6794,10 @@ function SlurryPipeManager:detectArmConnection(vehicle, entry, arm)
         end
     end
 
-    if entry.pipeEffects ~= nil then
+    -- Prefer this arm's own effect set (per-arm embedded effects); fall back to the
+    -- legacy single shared effect for nodeTree / single-effect embedded configs.
+    local armEffects = arm.pipeEffects or entry.pipeEffects
+    if armEffects ~= nil then
         local valveOpen   = state ~= nil and state.valveOpen or false
         local fillLevel   = vehicle.getFillUnitFillLevel ~= nil and vehicle:getFillUnitFillLevel(arm.fillUnitIndex) or 0
         -- The stream follows actual flow, which is pressure-driven (not the PTO),
@@ -5876,7 +6820,7 @@ function SlurryPipeManager:detectArmConnection(vehicle, entry, arm)
                     effectFillType = FillType.LIQUIDMANURE
                 end
                 -- Apply material matching the current fluid before starting effects
-                local pe = entry.pipeEffects[1]
+                local pe = armEffects[1]
                 if pe ~= nil then
                     if effectFillType == FillType.WATER and g_spsWaterMaterial ~= nil then
                         setMaterial(pe.node, g_spsWaterMaterial, 0)
@@ -5886,8 +6830,8 @@ function SlurryPipeManager:detectArmConnection(vehicle, entry, arm)
                     pe.hasValidMaterial = true
                     pe.useBaseMaterial  = true
                 end
-                g_effectManager:setEffectTypeInfo(entry.pipeEffects, effectFillType)
-                g_effectManager:startEffects(entry.pipeEffects)
+                g_effectManager:setEffectTypeInfo(armEffects, effectFillType)
+                g_effectManager:startEffects(armEffects)
                 arm.effectPlaying = true
             end
             -- Update stream distance: nozzle to slurry surface
@@ -5896,7 +6840,7 @@ function SlurryPipeManager:detectArmConnection(vehicle, entry, arm)
                 local surfY = SlurryNodeUtil.getSurfaceWorldY(foundSource, centreX, centreZ)
                 if surfY ~= -math.huge then
                     local dist = math.abs(nozzleY - surfY)
-                    local pipeEffect = entry.pipeEffects[1]
+                    local pipeEffect = armEffects[1]
                     if pipeEffect ~= nil and pipeEffect.setDistance ~= nil then
                         pipeEffect:setDistance(dist)
                         setVisibility(pipeEffect.node, dist > 0.05)
@@ -5904,7 +6848,7 @@ function SlurryPipeManager:detectArmConnection(vehicle, entry, arm)
                 end
             end
         else
-            if arm.effectPlaying then g_effectManager:stopEffects(entry.pipeEffects) arm.effectPlaying = false end
+            if arm.effectPlaying then g_effectManager:stopEffects(armEffects) arm.effectPlaying = false end
         end
     end
 end
@@ -6037,6 +6981,11 @@ function SlurryPipeManager:tickFlow(session, dt)
         end
         amount = amount * mult
         if amount <= 0 then return end
+        if SlurryPipeManager.DEBUG and session._lastConduitDir ~= state.direction then
+            session._lastConduitDir = state.direction
+            SlurryPipeManager.log("tickFlow[conduit]: %s dir=%s srcLevel=%.0f free=%.0f",
+                tostring(vehicle.configFileName), tostring(state.direction), sourceLevel or 0, freeCapacity or 0)
+        end
         self:removeFromSource(srcEntry, amount, fillType, vehicle)
         self:addToSource(dstEntry, amount, fillType, vehicle)
         session.totalTransferred = (session.totalTransferred or 0) + amount
@@ -6073,6 +7022,11 @@ function SlurryPipeManager:tickFlow(session, dt)
             return
         end
         local flowDir, scalar = self:resolveCouplingFlow(vehicle, state, pumpRunning, hasContent)
+        if SlurryPipeManager.DEBUG and session._lastArmFlowDir ~= flowDir then
+            session._lastArmFlowDir = flowDir
+            SlurryPipeManager.log("tickFlow[arm]: %s flowDir=%s scalar=%.2f pump=%s",
+                tostring(vehicle.configFileName), tostring(flowDir), scalar or 0, tostring(pumpRunning))
+        end
         if flowDir == nil or scalar <= 0 then return end
         local rateBase = (flowDir == SPS_DIRECTION_FILL)
             and (session.baseFillLitersPerSecond or session.baseLitersPerSecond)
@@ -6109,6 +7063,11 @@ function SlurryPipeManager:tickFlow(session, dt)
         -- direction; a spent tank backflows out by gravity), then honour any partner
         -- coupling flow-direction restriction against that EFFECTIVE direction.
         local flowDir, scalar = self:resolveCouplingFlow(vehicle, state, pumpRunning, hasContent)
+        if SlurryPipeManager.DEBUG and session._lastCplFlowDir ~= flowDir then
+            session._lastCplFlowDir = flowDir
+            SlurryPipeManager.log("tickFlow[coupling]: %s flowDir=%s scalar=%.2f pump=%s",
+                tostring(vehicle.configFileName), tostring(flowDir), scalar or 0, tostring(pumpRunning))
+        end
         if flowDir == nil or scalar <= 0 then return end
 
         for _, vEntry in ipairs(self.registeredVehicles) do
@@ -6652,6 +7611,22 @@ function SlurryPipeManager:resolveVehicleSource(vehicle)
                         entry.sourceResolvePrinted = true
                     end
                 end
+
+                -- One-shot diagnostic: why FILL_VOLUME was or was not built. A tanker
+                -- that resolves to FILL_UNIT_ONLY has no engine fill plane, so head
+                -- equalisation cannot read a surface from it.
+                if SlurryPipeManager.DEBUG and not entry._srcResolveLogged then
+                    entry._srcResolveLogged = true
+                    local spec = vehicle.spec_fillVolume
+                    local nVol = (spec ~= nil and spec.volumes ~= nil) and #spec.volumes or -1
+                    local nMap = 0
+                    if spec ~= nil and spec.fillUnitFillVolumeMapping ~= nil then
+                        for _ in pairs(spec.fillUnitFillVolumeMapping) do nMap = nMap + 1 end
+                    end
+                    SlurryPipeManager.log("resolveVehicleSource: %s fui=%d hasFillVolumeSpec=%s volumes=%d mappings=%d -> type=%s",
+                        tostring(vehicle.configFileName), fillUnitIndex, tostring(spec ~= nil),
+                        nVol, nMap, tostring(sourceEntry and sourceEntry.type))
+                end
             end
             return entry.sourceEntry
         end
@@ -7033,6 +8008,7 @@ end
 -- Sprayer config loading
 -- ---------------------------------------------------------------------------
 function SlurryPipeManager:loadSprayerVehicleConfigs(modDirectory)
+    SlurryPipeManager.log("loadSprayerVehicleConfigs: enter")
     local configRoot   = modDirectory .. "configs/"
     local manifestPath = modDirectory .. "configs/spsConfigManifest.xml"
     local xmlFile = XMLFile.load("spsManifest", manifestPath)
@@ -7069,6 +8045,7 @@ function SlurryPipeManager:loadSprayerVehicleConfigs(modDirectory)
 end
 
 function SlurryPipeManager:loadSprayerPlaceableConfigs(modDirectory)
+    SlurryPipeManager.log("loadSprayerPlaceableConfigs: enter")
     local configRoot   = modDirectory .. "configs/"
     local manifestPath = modDirectory .. "configs/spsConfigManifest.xml"
     local xmlFile = XMLFile.load("spsManifest", manifestPath)
@@ -7160,6 +8137,7 @@ end
 -- Sprayer registration — vehicle
 -- ---------------------------------------------------------------------------
 function SlurryPipeManager:registerSprayerVehicle(vehicle)
+    SlurryPipeManager.log("registerSprayerVehicle: enter %s", tostring(vehicle and vehicle.configFileName))
     for _, entry in ipairs(self.registeredSprayerVehicles) do
         if entry.object == vehicle then return end
     end
@@ -7391,6 +8369,7 @@ end
 -- Sprayer registration — placeable
 -- ---------------------------------------------------------------------------
 function SlurryPipeManager:registerSprayerPlaceable(placeable)
+    SlurryPipeManager.log("registerSprayerPlaceable: enter %s", tostring(placeable and placeable.configFileName))
     for _, entry in ipairs(self.registeredSprayerPlaceables) do
         if entry.object == placeable then return end
     end
@@ -7590,6 +8569,7 @@ end
 -- Sprayer unregistration
 -- ---------------------------------------------------------------------------
 function SlurryPipeManager:unregisterSprayerVehicle(vehicle)
+    SlurryPipeManager.log("unregisterSprayerVehicle: %s", tostring(vehicle and vehicle.configFileName))
     for i, entry in ipairs(self.registeredSprayerVehicles) do
         if entry.object == vehicle then
             -- Stop any active flow
@@ -7641,6 +8621,7 @@ function SlurryPipeManager:unregisterSprayerVehicle(vehicle)
 end
 
 function SlurryPipeManager:unregisterSprayerPlaceable(placeable)
+    SlurryPipeManager.log("unregisterSprayerPlaceable: %s", tostring(placeable and placeable.configFileName))
     for i, entry in ipairs(self.registeredSprayerPlaceables) do
         if entry.object == placeable then
             for _, sc in ipairs(entry.couplings) do
@@ -7742,6 +8723,7 @@ end
 -- Reuses _getCouplingArcNodes and _arcsOverlap — node structure is identical.
 -- ---------------------------------------------------------------------------
 function SlurryPipeManager:findOverlappingSprayerCoupler(coupling)
+    SlurryPipeManager.log("findOverlappingSprayerCoupler: from couplingId=%s", tostring(coupling and coupling.id))
     if coupling.isConnected then return nil end
     local apexA, arc1A, arc2A = self:_getCouplingArcNodes(coupling)
     if apexA == nil or not entityExists(apexA) then return nil end
@@ -7786,6 +8768,7 @@ end
 -- Sprayer connect
 -- ---------------------------------------------------------------------------
 function SlurryPipeManager:onSprayerCouplerConnect(object, coupling)
+    SlurryPipeManager.log("onSprayerCouplerConnect: couplingId=%s", tostring(coupling and coupling.id))
     if g_server == nil then
         -- Client: send to server. Server will find the overlapping coupler itself.
         SPSSprayerConnectEvent.sendEvent(object, coupling.id, nil, 0)
@@ -7813,6 +8796,7 @@ function SlurryPipeManager:onSprayerCouplerConnect(object, coupling)
 end
 
 function SlurryPipeManager:applySprayerConnect(couplingA, couplingB, ownerA, ownerB)
+    SlurryPipeManager.log("applySprayerConnect: A.id=%s B.id=%s", tostring(couplingA and couplingA.id), tostring(couplingB and couplingB.id))
     
     couplingA.isConnected              = true
     couplingA.connectedTarget          = ownerB
@@ -7862,6 +8846,7 @@ end
 -- Network event path: called with IDs from remote clients or server broadcasts.
 -- If targetCouplingId == 0 (client-to-server), finds the other coupling by arc overlap.
 function SlurryPipeManager:applySprayerConnectById(object, couplingId, targetObject, targetCouplingId)
+    SlurryPipeManager.log("applySprayerConnectById: idA=%s idB=%s", tostring(couplingId), tostring(targetCouplingId))
     -- Find couplingA — check vehicles first, then placeables
     local couplingA = self:_findSprayerCouplingById(object, couplingId, false)
     if couplingA == nil then
@@ -7907,6 +8892,7 @@ end
 -- Sprayer disconnect
 -- ---------------------------------------------------------------------------
 function SlurryPipeManager:onSprayerCouplerDisconnect(object, coupling)
+    SlurryPipeManager.log("onSprayerCouplerDisconnect: couplingId=%s", tostring(coupling and coupling.id))
     -- No valve check for sprayers - valves auto-open on connect and auto-close on disconnect
     
     if g_server == nil then
@@ -7919,6 +8905,7 @@ function SlurryPipeManager:onSprayerCouplerDisconnect(object, coupling)
 end
 
 function SlurryPipeManager:applySprayerDisconnect(object, couplingId, couplingObj)
+    SlurryPipeManager.log("applySprayerDisconnect: couplingId=%s", tostring(couplingId))
     local coupling = couplingObj
     if coupling == nil then
         -- Network path: search by id
@@ -8046,6 +9033,7 @@ end
 -- Sprayers have a single B-key flow toggle: there is no separate pump control,
 -- so pumpRunning is mirrored to valveOpen here. tickSprayerFlow requires both.
 function SlurryPipeManager:onSprayerToggleValve(object)
+    SlurryPipeManager.log("onSprayerToggleValve: enter")
     local entry = self:getSprayerVehicleEntry(object)
     if entry == nil then return end
     local state = entry.state
@@ -8083,6 +9071,7 @@ function SlurryPipeManager:onSprayerToggleValve(object)
 end
 
 function SlurryPipeManager:onSprayerToggleDirection(object)
+    SlurryPipeManager.log("onSprayerToggleDirection: enter")
     local entry = self:getSprayerVehicleEntry(object)
     if entry == nil then return end
     local state = entry.state
@@ -8141,6 +9130,7 @@ function SlurryPipeManager:_resolveSprayerSource(coupling)
 end
 
 function SlurryPipeManager:buildSprayerFlowSession(vehicle)
+    SlurryPipeManager.log("buildSprayerFlowSession: %s", tostring(vehicle and vehicle.configFileName))
     local entry = self:getSprayerVehicleEntry(vehicle)
     local litersPerSecond = 200
     local fillUnitIndex   = 1

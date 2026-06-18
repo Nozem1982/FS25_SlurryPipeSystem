@@ -13,6 +13,29 @@ SPSPipeChain.PLAYER_OFFSET = 0.75
 SPSPipeChain.NUM_BONES         = 14
 SPSPipeChain.PIPE_FLOOR_RADIUS = 0.08    -- measured: bone centre to pipe bottom
 
+-- ---------------------------------------------------------------------------
+-- Debug logging
+-- Flip SPSPipeChain.DEBUG to true to print [SPS PC] trace lines from every key
+-- part of this script; set it to false to silence all logging from this file.
+--
+-- SPSPipeChain.log(fmt, ...) checks the flag BEFORE doing any string.format
+-- work, and callers pass the format + arguments through (they do not pre-format
+-- the string). That means when DEBUG is false there is no string allocation, so
+-- the helper is safe to call from per-tick code. Any per-tick / per-bone call
+-- sites are additionally wrapped in `if SPSPipeChain.DEBUG then ... end` so the
+-- loop body itself is skipped entirely when logging is off.
+-- ---------------------------------------------------------------------------
+SPSPipeChain.DEBUG = false
+
+function SPSPipeChain.log(fmt, ...)
+    if not SPSPipeChain.DEBUG then return end
+    if select("#", ...) > 0 then
+        print("[SPS PC] " .. string.format(fmt, ...))
+    else
+        print("[SPS PC] " .. tostring(fmt))
+    end
+end
+
 function SPSPipeChain.new(anchorCoupling, modDirectory)
     local self            = setmetatable({}, SPSPipeChain)
     self.anchorCoupling   = anchorCoupling
@@ -22,10 +45,15 @@ function SPSPipeChain.new(anchorCoupling, modDirectory)
     self.dockingStation   = nil
     self.localStart       = false
     self.localStartNode   = nil
+    SPSPipeChain.log("new: chain created — anchorId=%s placeable=%s",
+        tostring(anchorCoupling ~= nil and anchorCoupling.id or "nil"),
+        tostring(anchorCoupling ~= nil and anchorCoupling.placeable ~= nil))
     return self
 end
 
 function SPSPipeChain:delete()
+    SPSPipeChain.log("delete: tearing down chain — segments=%d live=%s ds=%s",
+        #self.segments, tostring(self.liveSegment ~= nil), tostring(self.dockingStation ~= nil))
     self:_removeDockingStation()
     
     if self.liveSegment ~= nil then
@@ -44,7 +72,10 @@ end
 -- Chained pipes derive position and rotation from previous segment geometry.
 -- ---------------------------------------------------------------------------
 function SPSPipeChain:startLaying(sx, sy, sz, sry, localStartNode)
-    if self.liveSegment ~= nil then return end
+    if self.liveSegment ~= nil then
+        SPSPipeChain.log("startLaying: ignored — a live segment already exists")
+        return
+    end
 
     -- Placeable anchors can pass their real mount node here.  Segment 1 is then
     -- linked to that node and set to local 0,0,0 / 0,0,0, matching the vehicle
@@ -55,8 +86,14 @@ function SPSPipeChain:startLaying(sx, sy, sz, sry, localStartNode)
         useLocalStart = false
     end
 
+    SPSPipeChain.log("startLaying: segments=%d useLocalStart=%s pos=(%.2f,%.2f,%.2f) ry=%.3f",
+        #self.segments, tostring(useLocalStart), sx, sy, sz, sry or 0)
+
     local seg = self:_loadPipe(sx, sy, sz, sry or 0, nil, nil, nil, useLocalStart and localStartNode or nil)
-    if seg == nil then return end
+    if seg == nil then
+        SPSPipeChain.log("startLaying: ABORT — _loadPipe returned nil")
+        return
+    end
 
     if useLocalStart then
         self.localStart = true
@@ -73,7 +110,7 @@ function SPSPipeChain:startLaying(sx, sy, sz, sry, localStartNode)
     end
 
     self.liveSegment = seg
-    --print("[SPS] SPSPipeChain: started laying")
+    SPSPipeChain.log("startLaying: live segment created (will become segment %d)", #self.segments + 1)
 end
 
 -- ---------------------------------------------------------------------------
@@ -84,7 +121,10 @@ end
 -- Lock the current live pipe in place
 -- ---------------------------------------------------------------------------
 function SPSPipeChain:lockLivePipe()
-    if self.liveSegment == nil then return end
+    if self.liveSegment == nil then
+        SPSPipeChain.log("lockLivePipe: ignored — no live segment")
+        return
+    end
     local seg = self.liveSegment
     self.liveSegment = nil
 
@@ -127,7 +167,7 @@ function SPSPipeChain:lockLivePipe()
             }
             seg.chainStartCoupling = startCoupling
             table.insert(g_slurryPipeManager.chainTerminusEntries, startCoupling)
-           -- print("[SPS] lockLivePipe: chain start detection coupling registered on detNode01")
+            SPSPipeChain.log("lockLivePipe: chain start detection coupling registered on detNode01")
 
             -- Vehicle anchor: auto-connect bez pipe between vehicle coupler and chain start.
             -- The anchor coupling is a vehicle coupling if it has no placeable.
@@ -142,7 +182,7 @@ function SPSPipeChain:lockLivePipe()
                         vehicle, nil,
                         SlurryPipeConnectEvent.TARGET_TYPE_PLACEABLE,
                         self.anchorCoupling.id, startCoupling.id)
-                    --print("[SPS] lockLivePipe: auto-connected bez from vehicle coupler to chain start")
+                    SPSPipeChain.log("lockLivePipe: auto-connected bez from vehicle coupler to chain start")
                 end
             elseif self.anchorCoupling.placeable ~= nil then
                 -- Placeable anchor: do NOT mark the anchor isConnected (would break the
@@ -153,13 +193,13 @@ function SPSPipeChain:lockLivePipe()
                 startCoupling.isConnected              = true
                 startCoupling.connectedPartnerCoupling = self.anchorCoupling
                 startCoupling.connectedTarget          = self.anchorCoupling.placeable
-                --print("[SPS] lockLivePipe: linked chain start to placeable anchor for valve propagation")
+                SPSPipeChain.log("lockLivePipe: linked chain start to placeable anchor for valve propagation")
             end
         end
     elseif #self.segments == 1 and self.chainStartCoupling ~= nil then
         -- Chain start coupling already exists from finalizePlacement
         seg.chainStartCoupling = self.chainStartCoupling
-        --print("[SPS] lockLivePipe: using existing chain start coupling from placement")
+        SPSPipeChain.log("lockLivePipe: using existing chain start coupling from placement")
     end
 
     -- Terrain clamp: run once at lock time so the pipe drapes over ground
@@ -177,7 +217,7 @@ function SPSPipeChain:lockLivePipe()
     g_currentMission.activatableObjectsSystem:addActivatable(endActivatable)
     seg.endActivatable = endActivatable
 
-    print("[SPS] SPSPipeChain: locked segment " .. #self.segments .. " — primary@pipeRoot end@endConnectors")
+    SPSPipeChain.log("locked segment %d — primary@pipeRoot end@endConnectors", #self.segments)
 end
 
 -- ---------------------------------------------------------------------------
@@ -187,7 +227,7 @@ function SPSPipeChain:cancelLivePipe()
     if self.liveSegment == nil then return end
     self:_destroySegmentNodes(self.liveSegment)
     self.liveSegment = nil
-    print("[SPS] SPSPipeChain: cancelled live pipe")
+    SPSPipeChain.log("cancelled live pipe")
 end
 
 -- ---------------------------------------------------------------------------
@@ -195,12 +235,14 @@ end
 -- ---------------------------------------------------------------------------
 function SPSPipeChain:removeFromIndex(fromIndex)
     if fromIndex < 1 then fromIndex = 1 end
+    SPSPipeChain.log("removeFromIndex(%d): start — current segments=%d ds=%s",
+        fromIndex, #self.segments, tostring(self.dockingStation ~= nil))
     if self.dockingStation ~= nil then self:_removeDockingStation() end
     for i = #self.segments, fromIndex, -1 do
         self:_destroySegmentNodes(self.segments[i])
         table.remove(self.segments, i)
     end
-    print("[SPS] SPSPipeChain:removeFromIndex(" .. fromIndex .. ") — segments remaining: " .. #self.segments)
+    SPSPipeChain.log("removeFromIndex(%d): segments remaining: %d", fromIndex, #self.segments)
 
     -- The new last segment lost its endActivatable when the next segment was locked.
     -- Recreate it so the player can continue laying or add a docking station.
@@ -230,10 +272,13 @@ end
 --   detNode04 = detection node at END   of pipe (female side, where next segment plugs in)
 -- ---------------------------------------------------------------------------
 function SPSPipeChain:_loadPipe(startX, startY, startZ, startRY, colorR, colorG, colorB, localStartNode, skipFloorOffset)
+    SPSPipeChain.log("_loadPipe: enter — pos=(%.2f,%.2f,%.2f) ry=%.3f localStart=%s restore=%s",
+        startX, startY, startZ, startRY,
+        tostring(localStartNode ~= nil and localStartNode ~= 0), tostring(skipFloorOffset == true))
     local pipePath = self.modDirectory .. "i3d/pipes/slurryPipe.i3d"
     local i3dRoot  = loadI3DFile(pipePath)
     if i3dRoot == nil or i3dRoot == 0 then
-        print("[SPS PC] _loadPipe: ERROR failed to load slurryPipe.i3d")
+        SPSPipeChain.log("_loadPipe: ERROR failed to load slurryPipe.i3d")
         return nil
     end
 
@@ -257,7 +302,7 @@ function SPSPipeChain:_loadPipe(startX, startY, startZ, startRY, colorR, colorG,
     local endFloorLevel  = getChildAt(endConnectors, 4)
 
     if bone1 == nil or bone1 == 0 or bone16 == nil or bone16 == 0 then
-        print("[SPS PC] _loadPipe: ERROR Bone1 or Bone16 not found")
+        SPSPipeChain.log("_loadPipe: ERROR Bone1 or Bone16 not found")
         delete(i3dRoot)
         return nil
     end
@@ -298,7 +343,20 @@ function SPSPipeChain:_loadPipe(startX, startY, startZ, startRY, colorR, colorG,
     if hoseNode ~= nil and hoseNode ~= 0 then
         setShaderParameter(hoseNode, "colorScale", cr, cg, cb, 0, false)
     else
-        print("[SPS PC] _loadPipe: WARNING hoseNode nil — colour not applied")
+        SPSPipeChain.log("_loadPipe: WARNING hoseNode nil — colour not applied")
+    end
+
+    -- [SPS PC] anchorCoupling can legitimately be nil here: SlurryPipeManager
+    -- :applyDisconnect (freeChainBindingIfNeeded) clears it when a chain's bez
+    -- binding is broken, leaving the chain as a free-standing world entity. In
+    -- that state the player can still lay more pipe, so dereferencing
+    -- self.anchorCoupling unconditionally crashed _loadPipe. Guard it and fall
+    -- back to nil source/placeable; the flow source is re-resolved from
+    -- anchorCoupling on reconnect, so a free-standing terminus needs no source.
+    local anchorSourceEntry = (self.anchorCoupling ~= nil) and self.anchorCoupling.sourceEntry or nil
+    local anchorPlaceable   = (self.anchorCoupling ~= nil) and self.anchorCoupling.placeable   or nil
+    if self.anchorCoupling == nil then
+        SPSPipeChain.log("_loadPipe: anchorCoupling nil (free-standing chain) — chainCoupling source/placeable set nil")
     end
 
     local chainCoupling = {
@@ -313,8 +371,8 @@ function SPSPipeChain:_loadPipe(startX, startY, startZ, startRY, colorR, colorG,
         isChainTerminus          = true,
         chain                    = self,
         segmentIndex             = #self.segments + 1,
-        sourceEntry              = self.anchorCoupling.sourceEntry,
-        placeable                = self.anchorCoupling.placeable,
+        sourceEntry              = anchorSourceEntry,
+        placeable                = anchorPlaceable,
     }
 
     -- Segment loaded successfully (detailed position logging removed for cleaner logs)
@@ -351,6 +409,12 @@ function SPSPipeChain:update(dt)
     if g_localPlayer == nil then return end
 
     local seg = self.liveSegment
+
+    if SPSPipeChain.DEBUG and not seg._loggedUpdate then
+        seg._loggedUpdate = true
+        SPSPipeChain.log("update: tracking live segment end to player (PIPE_LENGTH=%.2f PLAYER_OFFSET=%.2f)",
+            SPSPipeChain.PIPE_LENGTH, SPSPipeChain.PLAYER_OFFSET)
+    end
 
     local px, _, pz = getWorldTranslation(g_localPlayer.rootNode)
     local sx, sy, sz = seg.startX, seg.startY, seg.startZ
@@ -392,7 +456,12 @@ end
 -- ---------------------------------------------------------------------------
 function SPSPipeChain:_terrainClampBones(seg)
     local terrain = g_currentMission and g_currentMission.terrainRootNode or nil
-    if terrain == nil then return end
+    if terrain == nil then
+        SPSPipeChain.log("_terrainClampBones: skipped — no terrain root node")
+        return
+    end
+
+    SPSPipeChain.log("_terrainClampBones: enter — clamping pipe bones to terrain")
 
     local NUM    = SPSPipeChain.NUM_BONES
     local RADIUS = SPSPipeChain.PIPE_FLOOR_RADIUS
@@ -489,6 +558,8 @@ function SPSPipeChain:_terrainClampBones(seg)
             end
         end
     end
+
+    SPSPipeChain.log("_terrainClampBones: done — anyClamped=%s", tostring(anyClamped))
 end
 
 -- ---------------------------------------------------------------------------
@@ -503,6 +574,11 @@ function SPSPipeChain:_updateBezierBones(seg)
     end
     if entityExists ~= nil and (not entityExists(seg.bone1) or not entityExists(seg.bone16)) then
         return
+    end
+
+    if SPSPipeChain.DEBUG and not seg._loggedBezier then
+        seg._loggedBezier = true
+        SPSPipeChain.log("_updateBezierBones: first bezier solve for this segment")
     end
 
     local p0x, p0y, p0z = getWorldTranslation(seg.bone1)
@@ -575,6 +651,10 @@ end
 function SPSPipeChain:_destroySegmentNodes(seg)
     if seg == nil then return end
 
+    SPSPipeChain.log("_destroySegmentNodes: tearing down segment — hasChainCoupling=%s hasChainStart=%s connected=%s",
+        tostring(seg.chainCoupling ~= nil), tostring(seg.chainStartCoupling ~= nil),
+        tostring(seg.chainCoupling ~= nil and seg.chainCoupling.isConnected == true))
+
     if g_slurryPipeManager ~= nil and seg.chainCoupling ~= nil then
         local entries = g_slurryPipeManager.chainTerminusEntries
         for i, e in ipairs(entries) do
@@ -624,15 +704,23 @@ end
 -- Docking station
 -- ---------------------------------------------------------------------------
 function SPSPipeChain:addDockingStation()
-    if #self.segments == 0 then return end
-    if self.dockingStation ~= nil then return end
+    if #self.segments == 0 then
+        SPSPipeChain.log("addDockingStation: ignored — no segments")
+        return
+    end
+    if self.dockingStation ~= nil then
+        SPSPipeChain.log("addDockingStation: ignored — docking station already present")
+        return
+    end
+
+    SPSPipeChain.log("addDockingStation: enter — segments=%d", #self.segments)
 
     local lastSeg = self.segments[#self.segments]
 
     local dsPath  = self.modDirectory .. "i3d/dockingStation/dockingStation.i3d"
     local i3dRoot = loadI3DFile(dsPath)
     if i3dRoot == nil or i3dRoot == 0 then
-        print("[SPS] SPSPipeChain: failed to load dockingStation.i3d")
+        SPSPipeChain.log("addDockingStation: ERROR failed to load dockingStation.i3d")
         return
     end
 
@@ -704,7 +792,7 @@ function SPSPipeChain:addDockingStation()
         end
     end
 
-    print("[SPS] SPSPipeChain: docking station added")
+    SPSPipeChain.log("addDockingStation: docking station added at (%.2f,%.2f,%.2f)", ex, terrainY, ez)
 end
 
 function SPSPipeChain:removeDockingStation()
@@ -712,7 +800,12 @@ function SPSPipeChain:removeDockingStation()
 end
 
 function SPSPipeChain:_removeDockingStation()
-    if self.dockingStation == nil then return end
+    if self.dockingStation == nil then
+        SPSPipeChain.log("_removeDockingStation: ignored — no docking station present")
+        return
+    end
+
+    SPSPipeChain.log("_removeDockingStation: enter — removing docking station")
 
     -- Close the anchor valve via the manager API before teardown so:
     --   * valveAnim plays reverse (handle rotates back to closed)
@@ -752,13 +845,16 @@ function SPSPipeChain:_removeDockingStation()
     if self.anchorCoupling ~= nil then
         self.anchorCoupling.valveOpen = false
     end
-    print("[SPS] SPSPipeChain: docking station removed")
+    SPSPipeChain.log("_removeDockingStation: docking station removed")
 end
 
 -- ---------------------------------------------------------------------------
 -- Save / Restore
 -- ---------------------------------------------------------------------------
 function SPSPipeChain:getSaveData()
+    SPSPipeChain.log("getSaveData: enter — segments=%d hasDS=%s anchorCoupling=%s",
+        #self.segments, tostring(self.dockingStation ~= nil), tostring(self.anchorCoupling ~= nil))
+
     local data = {
         anchorX           = 0,
         anchorY           = 0,
@@ -784,9 +880,8 @@ function SPSPipeChain:getSaveData()
         -- world position cached by SlurryPipeManager:applyDisconnect so the chain
         -- still saves correctly as a world entity.
         data.anchorX, data.anchorY, data.anchorZ = self.anchorX, self.anchorY, self.anchorZ
-        print(string.format(
-            "[SPS] SPSPipeChain:getSaveData using cached anchor (%.2f,%.2f,%.2f) — chain is free-standing",
-            data.anchorX, data.anchorY, data.anchorZ))
+        SPSPipeChain.log("getSaveData: using cached anchor (%.2f,%.2f,%.2f) — chain is free-standing",
+            data.anchorX, data.anchorY, data.anchorZ)
     end
     -- Save pipeRoot of first segment so vehicle chains restore from the correct start position.
     -- Placeable-local chains do not use this on reload; they relink segment 1 to the
@@ -819,10 +914,16 @@ function SPSPipeChain:getSaveData()
                 colorR=seg.colorR, colorG=seg.colorG, colorB=seg.colorB })
         end
     end
+    SPSPipeChain.log("getSaveData: done — saved %d segment(s) hasDS=%s",
+        #data.segments, tostring(data.hasDockingStation))
     return data
 end
 
 function SPSPipeChain:restoreFromSaveData(data)
+    SPSPipeChain.log("restoreFromSaveData: enter — %d segment(s) to restore localStart=%s hasDS=%s",
+        (data.segments ~= nil) and #data.segments or 0,
+        tostring(data.localStart == true), tostring(data.hasDockingStation == true))
+
     self.localStart = data.localStart == true
     self.localStartNode = self.localStart and self.anchorCoupling.mountNode or nil
 
@@ -915,16 +1016,26 @@ function SPSPipeChain:restoreFromSaveData(data)
     if data.hasDockingStation then
         self:_restoreDockingStation(data)
     end
---    print("[SPS] SPSPipeChain: restored " .. #self.segments .. " segments")
+    SPSPipeChain.log("restoreFromSaveData: done — restored %d segment(s) ds=%s",
+        #self.segments, tostring(self.dockingStation ~= nil))
 end
 
 function SPSPipeChain:_restoreDockingStation(data)
-    if #self.segments == 0 then return end
+    if #self.segments == 0 then
+        SPSPipeChain.log("_restoreDockingStation: ignored — no segments")
+        return
+    end
     local lastSeg = self.segments[#self.segments]
+
+    SPSPipeChain.log("_restoreDockingStation: enter — restoring DS at (%.2f,%.2f,%.2f)",
+        data.dsSaveX or 0, data.dsSaveY or 0, data.dsSaveZ or 0)
 
     local dsPath  = self.modDirectory .. "i3d/dockingStation/dockingStation.i3d"
     local i3dRoot = loadI3DFile(dsPath)
-    if i3dRoot == nil or i3dRoot == 0 then return end
+    if i3dRoot == nil or i3dRoot == 0 then
+        SPSPipeChain.log("_restoreDockingStation: ERROR failed to load dockingStation.i3d")
+        return
+    end
 
     local dsNode        = getChildAt(i3dRoot, 0)
     local visShape      = getChildAt(dsNode, 0)
@@ -987,4 +1098,6 @@ function SPSPipeChain:_restoreDockingStation(data)
             end
         end
     end
+
+    SPSPipeChain.log("_restoreDockingStation: done — docking station restored")
 end

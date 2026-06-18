@@ -2,7 +2,7 @@
 
 <i3D name="nodeTree.i3d" version="1.6" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://i3d.giants.ch/schema/i3d-1.6.xsd">
   <Asset>
-    <Export program="GIANTS Editor 64bit" version="10.0.11"/>
+    <Export program="GIANTS Editor 64bit" version="10.0.12"/>
   </Asset>
 
   <Files>
@@ -43,6 +43,12 @@
         <TransformGroup name="tsa_vis" nodeId="23">
           <TransformGroup name="rearControlNode" translation="1.14868 1.04626 -3.37517" nodeId="24"/>
           <TransformGroup name="exhaustNode" translation="1.14868 1.04626 -3.37517" nodeId="25"/>
+        </TransformGroup>
+      </TransformGroup>
+      <TransformGroup name="slurryHeight" nodeId="26">
+        <TransformGroup name="tsa_vis" nodeId="27">
+          <TransformGroup name="emptyNode" translation="0 1.12618 0" nodeId="28"/>
+          <TransformGroup name="fullNode" translation="0 3.60545 0" nodeId="29"/>
         </TransformGroup>
       </TransformGroup>
     </TransformGroup>

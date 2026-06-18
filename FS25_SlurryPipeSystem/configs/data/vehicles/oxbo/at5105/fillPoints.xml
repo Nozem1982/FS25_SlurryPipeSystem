@@ -12,6 +12,8 @@
 	
 	<pump pumpType="HVP"/>        <!-- profi2, Samson -->
 	
+	<surfaceRef emptyNode="emptyNode" fullNode="fullNode"/>
+	
 	<!-- Pressure section optional. Omit entirely to use the SPS defaults shown below.
 		maxPressure     : ±bar ceiling; HUD reads from -this to +this
 		minThreshold    : bar of stored pressure needed before flow can start

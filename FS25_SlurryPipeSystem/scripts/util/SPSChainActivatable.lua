@@ -11,6 +11,28 @@ SPSChainActivatable.__index = SPSChainActivatable
 SPSChainActivatable.ACTIVATE_RADIUS = 1.5
 SPSChainActivatable.HOLD_THRESHOLD  = 0.8
 
+-- ---------------------------------------------------------------------------
+-- Debug logging
+-- Flip SPSChainActivatable.DEBUG to true to print [SPS SPCA] trace lines from
+-- every key part of this script; set it to false to silence all logging here.
+--
+-- SPSChainActivatable.log(fmt, ...) checks the flag BEFORE doing any
+-- string.format work, and callers pass the format + arguments through (they do
+-- not pre-format the string). That means when DEBUG is false there is no string
+-- allocation, so the helper is cheap. Per-frame functions (getIsActivatable,
+-- update, _getState) are intentionally NOT logged to avoid frame spam.
+-- ---------------------------------------------------------------------------
+SPSChainActivatable.DEBUG = false
+
+function SPSChainActivatable.log(fmt, ...)
+    if not SPSChainActivatable.DEBUG then return end
+    if select("#", ...) > 0 then
+        print("[SPS SPCA] " .. string.format(fmt, ...))
+    else
+        print("[SPS SPCA] " .. tostring(fmt))
+    end
+end
+
 function SPSChainActivatable.new(chain, arcIndex, coupling)
     local self          = setmetatable({}, SPSChainActivatable)
     self.chain          = chain
@@ -22,10 +44,13 @@ function SPSChainActivatable.new(chain, arcIndex, coupling)
     self._longFired     = false
     self._actionEventId = nil
     self.isEndActivatable = false  -- true = detNode01 (end of pipe), false = pipeRoot (start of pipe)
+    SPSChainActivatable.log("new: created — arcIndex=%s coupling=%s", tostring(arcIndex), tostring(coupling ~= nil))
     return self
 end
 
 function SPSChainActivatable:delete()
+    SPSChainActivatable.log("delete: removing activatable — arcIndex=%s isEnd=%s",
+        tostring(self.arcIndex), tostring(self.isEndActivatable))
     if g_currentMission ~= nil and g_currentMission.activatableObjectsSystem ~= nil then
         g_currentMission.activatableObjectsSystem:removeActivatable(self)
     end
@@ -50,7 +75,7 @@ function SPSChainActivatable:getIsActivatable()
         if self.chain == nil or self.chain.liveSegment == nil then
             arcCoupling = self.coupling
         end
-    elseif self.isEndActivatable and self.chain ~= nil then
+    elseif self.isEndActivatable and self.chain ~= nil and self.chain.liveSegment == nil then
         local seg = self.chain.segments[self.arcIndex]
         if seg ~= nil then arcCoupling = seg.chainCoupling end
     end
@@ -66,7 +91,12 @@ function SPSChainActivatable:getIsActivatable()
     else
         local cx, cy, cz = getWorldTranslation(node)
         local radius = SPSChainActivatable.ACTIVATE_RADIUS
-        if self.arcIndex == 0 and self.chain ~= nil and self.chain.liveSegment ~= nil then
+        -- Live pipe being walked: the prompt node follows the live end, so use a
+        -- generous radius. Applies to the anchor activatable and, on a
+        -- free-standing chain, to the last segment's end activatable (which
+        -- stands in for the missing anchor activatable's finalise prompt).
+        if self.chain ~= nil and self.chain.liveSegment ~= nil
+        and (self.arcIndex == 0 or self.isEndActivatable) then
             radius = 3.5
         end
         if MathUtil.vector3Length(px - cx, py - cy, pz - cz) > radius then return false end
@@ -79,13 +109,25 @@ function SPSChainActivatable:getIsActivatable()
     if self.arcIndex == 0 and self.coupling ~= nil and g_slurryPipeManager ~= nil and not isLaying and not hasSegments then
         if g_slurryPipeManager:findOverlappingCoupler(self.coupling) ~= nil then return false end
     end
-    -- Terminus: hide when live pipe is being walked
+    -- Terminus: hide when live pipe is being walked.
+    -- Exception: a free-standing chain (anchorCoupling freed by applyDisconnect)
+    -- has no anchor activatable to offer finalise/cancel, so the last locked
+    -- segment's end activatable must stay visible to provide it while laying.
     if self.arcIndex > 0 and self.chain ~= nil and self.chain.liveSegment ~= nil then
-        return false
+        local freeStandingFinalise =
+            self.isEndActivatable
+            and self.chain.anchorCoupling == nil
+            and self.chain.segments[self.arcIndex + 1] == nil
+        if not freeStandingFinalise then
+            return false
+        end
     end
     -- End activatable only: hide when a vehicle arc overlaps the chain coupling
-    -- (SPSPipeActivatable handles the tanker connect in that case)
-    if self.isEndActivatable and self.arcIndex > 0 and self.chain ~= nil and g_slurryPipeManager ~= nil then
+    -- (SPSPipeActivatable handles the tanker connect in that case). Skip this
+    -- while a live pipe is being walked (free-standing finalise) — the finalise
+    -- prompt must stay regardless of nearby couplers.
+    if self.isEndActivatable and self.arcIndex > 0 and self.chain ~= nil and g_slurryPipeManager ~= nil
+    and self.chain.liveSegment == nil then
         local seg = self.chain.segments[self.arcIndex]
         if seg ~= nil and seg.chainCoupling ~= nil then
             -- Only suppress for overlap check when not already connected
@@ -178,7 +220,8 @@ end
 
 function SPSChainActivatable:_onShortPress()
     local state = self:_getState()
---    print("[SPS SPCA] ChainActivatable shortPress arc=" .. self.arcIndex .. " isEnd=" .. tostring(self.isEndActivatable) .. " state=" .. tostring(state))
+    SPSChainActivatable.log("shortPress: arc=%s isEnd=%s state=%s",
+        tostring(self.arcIndex), tostring(self.isEndActivatable), tostring(state))
     if state == "layFirstPipe" then
         -- Start laying from anchor coupler
         if g_slurryPipeManager ~= nil then
@@ -196,8 +239,11 @@ function SPSChainActivatable:_onShortPress()
                 local px, _, pz = getWorldTranslation(g_localPlayer.rootNode)
                 local d = math.sqrt((px - liveSeg.startX)^2 + (pz - liveSeg.startZ)^2)
                 if d >= 0.5 then
+                    SPSChainActivatable.log("shortPress: finalise — locking live pipe (walked %.2fm, freeStanding=%s)",
+                        d, tostring(self.chain.anchorCoupling == nil))
                     self.chain:lockLivePipe()
                 else
+                    SPSChainActivatable.log("shortPress: finalise refused — pipe too short (%.2fm < 0.5m)", d)
                     if g_currentMission ~= nil then
                         g_currentMission:showBlinkingWarning(g_i18n:getText("warning_spsPipeTooShort"), 1500)
                     end
@@ -210,12 +256,15 @@ function SPSChainActivatable:_onShortPress()
             if lastSeg ~= nil and lastSeg.endConnectors ~= nil then
                 local ex, ey, ez = getWorldTranslation(lastSeg.endConnectors)
                 local _, ery, _  = getWorldRotation(lastSeg.endConnectors)
+                SPSChainActivatable.log("shortPress: layMore — starting new live pipe from segment %d (freeStanding=%s)",
+                    #self.chain.segments, tostring(self.chain.anchorCoupling == nil))
                 self.chain:startLaying(ex, ey, ez, ery)
             end
         end
     elseif state == "removePipeChain" then
         if self.arcIndex == 0 then
             -- Remove all segments
+            SPSChainActivatable.log("shortPress: removePipeChain — removing entire chain from anchor")
             self.chain:removeFromIndex(1)
             if g_slurryPipeManager ~= nil then
                 g_slurryPipeManager:onChainEmpty(self.chain, self.coupling)
@@ -223,9 +272,11 @@ function SPSChainActivatable:_onShortPress()
             self.chain = nil
         else
             -- Remove from this segment onwards
+            SPSChainActivatable.log("shortPress: removePipeChain — removing from segment %d onwards", self.arcIndex)
             self.chain:removeFromIndex(self.arcIndex)
         end
     elseif state == "dockingStationOpen" or state == "dockingStationClosed" then
+        SPSChainActivatable.log("shortPress: removing docking station")
         self.chain:removeDockingStation()
         if #self.chain.segments == 0 and self.arcIndex == 0 then
             if g_slurryPipeManager ~= nil then
@@ -234,6 +285,7 @@ function SPSChainActivatable:_onShortPress()
             self.chain = nil
         end
     elseif state == "connectedValveClosed" or state == "connectedHydraulicValve" then
+        SPSChainActivatable.log("shortPress: disconnecting connected chain coupling (state=%s)", tostring(state))
         local seg = self.chain.segments[self.arcIndex]
         if seg ~= nil and seg.chainCoupling ~= nil and g_slurryPipeManager ~= nil then
             g_slurryPipeManager:onCouplerDisconnect(nil, seg.chainCoupling)
@@ -243,12 +295,14 @@ end
 
 function SPSChainActivatable:_onLongPress()
     local state = self:_getState()
---    print("[SPS SPCA] ChainActivatable longPress arc=" .. self.arcIndex .. " isEnd=" .. tostring(self.isEndActivatable) .. " state=" .. tostring(state))
+    SPSChainActivatable.log("longPress: arc=%s isEnd=%s state=%s",
+        tostring(self.arcIndex), tostring(self.isEndActivatable), tostring(state))
     if state == "finalisePipe" then
         -- Long press while laying: cancel the live pipe entirely
         if self.chain ~= nil then
+            SPSChainActivatable.log("longPress: finalise — cancelling live pipe (freeStanding=%s)",
+                tostring(self.chain.anchorCoupling == nil))
             self.chain:cancelLivePipe()
---            print("[SPS SPCA] ChainActivatable: cancelled live pipe via long press")
         end
     elseif state == "deployCoupling" then
         if g_slurryPipeManager ~= nil then
@@ -267,6 +321,8 @@ function SPSChainActivatable:_onLongPress()
             end
         -- Non-deployable or chain exists: long press adds docking station
         elseif self.chain ~= nil and self.chain.dockingStation == nil then
+            SPSChainActivatable.log("longPress: adding docking station (arc=%s segments=%d)",
+                tostring(self.arcIndex), #self.chain.segments)
             self.chain:addDockingStation()
         end
     elseif state == "dockingStationClosed" or state == "dockingStationOpen" then
@@ -498,8 +554,16 @@ function SPSChainActivatable:_getState()
     if self.isEndActivatable then
         -- Only active when this is the last locked segment
         if self.chain.segments[self.arcIndex + 1] ~= nil then return nil end
-        -- Don't show while a live pipe is already being walked
-        if self.chain.liveSegment ~= nil then return nil end
+        -- Live pipe being walked: normally the anchor activatable offers finalise.
+        -- On a free-standing chain (anchorCoupling freed) there is no anchor
+        -- activatable, so the last segment's end activatable provides finalise
+        -- (short press) / cancel (long press) instead.
+        if self.chain.liveSegment ~= nil then
+            if self.chain.anchorCoupling == nil then
+                return "finalisePipe"
+            end
+            return nil
+        end
         local seg = self.chain.segments[self.arcIndex]
         if seg == nil then return nil end
         if seg.chainCoupling ~= nil and seg.chainCoupling.isConnected then
@@ -561,6 +625,12 @@ function SPSChainActivatable:_getNode()
         local seg = self.chain.segments[self.arcIndex]
         if seg == nil then return nil end
         if self.isEndActivatable then
+            -- Free-standing finalise: follow the live pipe end so the prompt
+            -- stays near the player (no anchor activatable does this for us).
+            if self.chain.anchorCoupling == nil and self.chain.liveSegment ~= nil
+            and self.chain.segments[self.arcIndex + 1] == nil then
+                return self.chain.liveSegment.endConnectors or seg.endConnectors or nil
+            end
             return seg.endConnectors or nil   -- end of pipe: lay more / docking station
         else
             return seg.pipeRoot or nil        -- start of pipe: remove from here

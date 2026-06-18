@@ -222,10 +222,12 @@ function SPSSprayerConnectEvent:run(connection)
             self.targetObject, self.targetCouplingId
         )
         if not connection:getIsServer() then
-            -- Re-broadcast to other clients with full IDs
+            -- Re-broadcast to all clients INCLUDING the originator (ignoreConnection = nil).
+            -- The sender did not apply locally; it resolves the partner via
+            -- findOverlappingSprayerCoupler on receipt, same as every other client.
             g_server:broadcastEvent(
                 SPSSprayerConnectEvent.new(self.object, self.couplingId, self.targetObject, self.targetCouplingId),
-                nil, connection, self.object
+                nil, nil, self.object
             )
         end
     end
@@ -279,9 +281,10 @@ function SPSSprayerDisconnectEvent:run(connection)
     if g_slurryPipeManager ~= nil then
         g_slurryPipeManager:applySprayerDisconnect(self.object, self.couplingId, nil)
         if not connection:getIsServer() then
+            -- Include the originator so it removes the sprayer pipe locally.
             g_server:broadcastEvent(
                 SPSSprayerDisconnectEvent.new(self.object, self.couplingId),
-                nil, connection, self.object
+                nil, nil, self.object
             )
         end
     end

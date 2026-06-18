@@ -13,7 +13,7 @@
 	
 	<pump pumpType="HVP"/>        <!-- profi2, Samson -->
 	
-	<shearBolt bolt="true"/>
+	<surfaceRef emptyNode="emptyNode" fullNode="fullNode"/>
 	
 	<!-- Pressure section optional. Omit entirely to use the SPS defaults shown below.
 		maxPressure     : ±bar ceiling; HUD reads from -this to +this

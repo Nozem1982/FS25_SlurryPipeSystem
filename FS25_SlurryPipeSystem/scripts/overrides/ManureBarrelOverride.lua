@@ -10,21 +10,202 @@
 SlurryPipeSystemOverride = {}
 
 -- ---------------------------------------------------------------------------
+-- Bayern "Attach Implements Manually" (AIM) integration — debug logging.
+-- Flip SlurryPipeSystemOverride.DEBUG_BAYERN to true to print [SPS BAYERN]
+-- trace lines from the PTO/hose connection probes below; set it to false to
+-- silence them. logBayern checks the flag BEFORE doing any string.format work,
+-- so it is safe to leave call sites in place when logging is off.
+-- ---------------------------------------------------------------------------
+SlurryPipeSystemOverride.DEBUG_BAYERN = false
+
+function SlurryPipeSystemOverride.logBayern(fmt, ...)
+    if not SlurryPipeSystemOverride.DEBUG_BAYERN then return end
+    if select("#", ...) > 0 then
+        print("[SPS BAYERN] " .. string.format(fmt, ...))
+    else
+        print("[SPS BAYERN] " .. tostring(fmt))
+    end
+end
+
+-- ---------------------------------------------------------------------------
+-- Bayern AIM state probes.
+-- Unlike Manual Attach (Wopster), AIM does NOT add isPtoAttached / isHoseAttached
+-- getters to the implement. It stores attach state on the ATTACHER, keyed by the
+-- attacher's jointDescIndex:
+--   attacher.spec_attachPowerTakeOffsManually.attachedPTOs[jointDescIndex]
+--   attacher.spec_attachConnectionHosesManually.attachedHoses[jointDescIndex]
+-- (verified against AttachImplementsManually.lua 519-533,
+--  AttachPowerTakeOffsManually.lua 520-584, AttachConnectionHosesManually.lua).
+--
+-- Each probe returns:
+--   true/false -> AIM governs this joint and reports its connection state
+--   nil        -> AIM is not loaded, the vehicle is not attached, or this joint
+--                 pairing carries no PTO / no hoses at all. The caller then falls
+--                 through to vanilla `true`, so a tool with no PTO is never
+--                 wrongly reported as "disconnected" (no vanilla regression).
+--
+-- Applicability is gated by STATIC, attach-independent config on the IMPLEMENT, so
+-- the gate never inverts when the connection is broken:
+--   PowerTakeOffUtil.getHasInputPTO            (implement's parsed inputPowerTakeOffs)
+--   ConnectionHoseUtil.getHasInputConnectionHoses (implement's parsed connectionHoses)
+-- The tractor-side getHasOutputPTO is intentionally NOT used (it tracks runtime-mounted
+-- PTOs and reads empty while disconnected — see getBayernPTOConnected for detail).
+-- ---------------------------------------------------------------------------
+function SlurryPipeSystemOverride.getBayernPTOConnected(vehicle)
+    if vehicle == nil or vehicle.getAttacherVehicle == nil then return nil end
+    local attacher = vehicle:getAttacherVehicle()
+    if attacher == nil then return nil end
+
+    local spec = attacher.spec_attachPowerTakeOffsManually
+    if spec == nil or spec.attachedPTOs == nil then return nil end
+    if attacher.getImplementIndexByObject == nil or attacher.getAttacherJointIndexFromImplementIndex == nil then return nil end
+
+    local implementIndex = attacher:getImplementIndexByObject(vehicle)
+    if implementIndex == nil then return nil end
+    local jointDescIndex = attacher:getAttacherJointIndexFromImplementIndex(implementIndex)
+    if jointDescIndex == nil then return nil end
+
+    local inputJointDescIndex = vehicle.getActiveInputAttacherJointDescIndex ~= nil
+                                and vehicle:getActiveInputAttacherJointDescIndex() or nil
+
+    -- Applicability: does the IMPLEMENT itself declare any input PTO? Read directly
+    -- off its own spec_powerTakeOffs.inputPowerTakeOffs (the same field Bayern's
+    -- getHasInputPTO reads), rather than calling getHasInputPTO — that helper bails
+    -- early if spec.outputPowerTakeOffs is nil and also matches per-joint, either of
+    -- which was returning false for this PTO-driven tanker. A non-empty inputPowerTakeOffs
+    -- means the tool is PTO-driven, so gate on attach state; empty means no PTO -> pass.
+    -- (The tractor-side output PTO is intentionally never consulted: it tracks RUNTIME
+    -- mounted PTOs and reads empty while disconnected, which would invert the gate.)
+    local ptoSpec   = vehicle.spec_powerTakeOffs
+    local inputCount = 0
+    if ptoSpec ~= nil and ptoSpec.inputPowerTakeOffs ~= nil then
+        for _, _ in pairs(ptoSpec.inputPowerTakeOffs) do
+            inputCount = inputCount + 1
+        end
+    end
+
+    -- Conclusive diagnostic: shows whether the spec/table is even present and populated.
+    SlurryPipeSystemOverride.logBayern("PTO probe vehicle=%s joint=%s input=%s ptoSpec=%s inputPTOcount=%s",
+        tostring(vehicle.configFileName), tostring(jointDescIndex), tostring(inputJointDescIndex),
+        tostring(ptoSpec ~= nil), tostring(inputCount))
+
+    if inputCount == 0 then
+        SlurryPipeSystemOverride.logBayern("PTO not applicable (no input PTO) joint=%s vehicle=%s -> pass-through",
+            tostring(jointDescIndex), tostring(vehicle.configFileName))
+        return nil
+    end
+
+    local connected = spec.attachedPTOs[jointDescIndex] ~= nil
+    SlurryPipeSystemOverride.logBayern("PTO joint=%s input=%s connected=%s vehicle=%s",
+        tostring(jointDescIndex), tostring(inputJointDescIndex), tostring(connected), tostring(vehicle.configFileName))
+    return connected
+end
+
+function SlurryPipeSystemOverride.getBayernHoseConnected(vehicle)
+    -- Entry trace: prints regardless of which guard bails, so we can see exactly where
+    -- the hose probe stops (it was returning before reaching the main probe log).
+    local attacher0 = (vehicle ~= nil and vehicle.getAttacherVehicle ~= nil) and vehicle:getAttacherVehicle() or nil
+    SlurryPipeSystemOverride.logBayern("Hose ENTRY vehicle=%s hasGetAttacher=%s attacher=%s attHoseSpec=%s implHoseSpec=%s",
+        tostring(vehicle ~= nil and vehicle.configFileName or vehicle),
+        tostring(vehicle ~= nil and vehicle.getAttacherVehicle ~= nil),
+        tostring(attacher0 ~= nil and attacher0.configFileName or attacher0),
+        tostring(attacher0 ~= nil and attacher0.spec_attachConnectionHosesManually ~= nil),
+        tostring(vehicle ~= nil and vehicle.spec_attachConnectionHosesManually ~= nil))
+
+    if vehicle == nil or vehicle.getAttacherVehicle == nil then
+        SlurryPipeSystemOverride.logBayern("Hose BAIL: no vehicle/getAttacherVehicle"); return nil
+    end
+    local attacher = vehicle:getAttacherVehicle()
+    if attacher == nil then
+        SlurryPipeSystemOverride.logBayern("Hose BAIL: attacher nil (not attached)"); return nil
+    end
+
+    local spec = attacher.spec_attachConnectionHosesManually
+    if spec == nil or spec.attachedHoses == nil then
+        SlurryPipeSystemOverride.logBayern("Hose BAIL: attacher hose spec=%s attachedHoses=%s",
+            tostring(spec ~= nil), tostring(spec ~= nil and spec.attachedHoses ~= nil)); return nil
+    end
+    if attacher.getImplementIndexByObject == nil or attacher.getAttacherJointIndexFromImplementIndex == nil then
+        SlurryPipeSystemOverride.logBayern("Hose BAIL: attacher missing implement-index methods"); return nil
+    end
+
+    local implementIndex = attacher:getImplementIndexByObject(vehicle)
+    if implementIndex == nil then
+        SlurryPipeSystemOverride.logBayern("Hose BAIL: implementIndex nil"); return nil
+    end
+    local jointDescIndex = attacher:getAttacherJointIndexFromImplementIndex(implementIndex)
+    if jointDescIndex == nil then
+        SlurryPipeSystemOverride.logBayern("Hose BAIL: jointDescIndex nil"); return nil
+    end
+
+    local inputJointDescIndex = vehicle.getActiveInputAttacherJointDescIndex ~= nil
+                                and vehicle:getActiveInputAttacherJointDescIndex() or nil
+
+    -- Applicability: does the IMPLEMENT declare any connection hoses? Instead of
+    -- guessing which sub-list its <hose> entries land in, walk EVERY field of its own
+    -- spec_connectionHoses and sum the lengths of any array-valued field. This is
+    -- field-name-agnostic, so it can't miss the real list. The per-field breakdown is
+    -- logged so we can see exactly where the hoses live. (getHasInputConnectionHoses
+    -- is not used: it filters by input joint and returned false here, the same per-joint
+    -- fragility the PTO check hit.)
+    local ch = vehicle.spec_connectionHoses
+    local hoseCount = 0
+    local breakdown = ""
+    if ch ~= nil then
+        for k, v in pairs(ch) do
+            if type(v) == "table" then
+                local n = #v
+                if n > 0 then
+                    hoseCount = hoseCount + n
+                    breakdown = breakdown .. tostring(k) .. "=" .. tostring(n) .. " "
+                end
+            end
+        end
+    end
+
+    SlurryPipeSystemOverride.logBayern("Hose probe vehicle=%s joint=%s input=%s chSpec=%s total=%s lists[ %s]",
+        tostring(vehicle.configFileName), tostring(jointDescIndex), tostring(inputJointDescIndex),
+        tostring(ch ~= nil), tostring(hoseCount), breakdown)
+
+    if hoseCount == 0 then
+        SlurryPipeSystemOverride.logBayern("Hoses not applicable (no hoses) joint=%s vehicle=%s -> pass-through",
+            tostring(jointDescIndex), tostring(vehicle.configFileName))
+        return nil
+    end
+
+    local connected = spec.attachedHoses[jointDescIndex] ~= nil
+    SlurryPipeSystemOverride.logBayern("Hose joint=%s input=%s connected=%s vehicle=%s",
+        tostring(jointDescIndex), tostring(inputJointDescIndex), tostring(connected), tostring(vehicle.configFileName))
+    return connected
+end
+
+-- ---------------------------------------------------------------------------
 -- isPTOConnected / isHydraulicsConnected
--- Uses MA's own vehicle methods when present.
--- Both return true when the vehicle has no such connection type,
--- so vanilla (no MA loaded) always passes through unchanged.
+-- Uses MA's own vehicle methods when present, then the Bayern AIM attacher-side
+-- probes, then falls through to true. Both return true when neither mod governs
+-- the connection, so vanilla (no manual-attach mod) always passes through unchanged.
 -- ---------------------------------------------------------------------------
 function SlurryPipeSystemOverride.isPTOConnected(vehicle)
     if vehicle.isPtoAttached ~= nil then
         return vehicle:isPtoAttached()
     end
+    local bayern = SlurryPipeSystemOverride.getBayernPTOConnected(vehicle)
+    if bayern ~= nil then
+        return bayern
+    end
     return true
 end
 
 function SlurryPipeSystemOverride.isHydraulicsConnected(vehicle)
+    SlurryPipeSystemOverride.logBayern("isHydraulicsConnected CALLED vehicle=%s hasIsHoseAttached=%s",
+        tostring(vehicle ~= nil and vehicle.configFileName or vehicle),
+        tostring(vehicle ~= nil and vehicle.isHoseAttached ~= nil))
     if vehicle.isHoseAttached ~= nil then
         return vehicle:isHoseAttached()
+    end
+    local bayern = SlurryPipeSystemOverride.getBayernHoseConnected(vehicle)
+    if bayern ~= nil then
+        return bayern
     end
     return true
 end

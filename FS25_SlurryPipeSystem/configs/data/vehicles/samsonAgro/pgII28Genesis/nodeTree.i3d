@@ -2,7 +2,7 @@
 
 <i3D name="nodeTree.i3d" version="1.6" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://i3d.giants.ch/schema/i3d-1.6.xsd">
   <Asset>
-    <Export program="GIANTS Editor 64bit" version="10.0.11"/>
+    <Export program="GIANTS Editor 64bit" version="10.0.12"/>
   </Asset>
 
   <Files>
@@ -68,11 +68,29 @@
         </TransformGroup>
       </TransformGroup>
       <TransformGroup name="pipeEffects" nodeId="41">
-        <TransformGroup name="turretSAP2PipeVar02" translation="-1.32977 1.89186 3.85672" rotation="-0.00325074 -0.0032492 0.021616" nodeId="42">
-          <TransformGroup name="effect" translation="-0.145396 -1.06472 0.0602641" rotation="-3.3069 1.33402e-08 -9.39692" nodeId="43">
-            <Shape name="pipeEffect" translation="-0.000407 0 0" rotation="-90 0 180" shapeId="2" clipDistance="100" nodeId="44" castsShadows="true" receiveShadows="true" materialIds="5"/>
-            <Shape name="pipeEffectSmoke" translation="1.13457e-07 -3.25029 0" rotation="0 0 2e-06" shapeId="3" visibility="false" clipDistance="100" nodeId="45" castsShadows="true" receiveShadows="true" materialIds="5"/>
+        <TransformGroup name="turretSAP2PipeVar01" translation="-1.28455 1.83419 3.8758" rotation="-0.00325074 -0.0032492 0.021616" nodeId="42">
+          <TransformGroup name="effect01" translation="0.262573 -1.2084 0.0735378" rotation="-4.93733 -0.769403 81.18" nodeId="43">
+            <Shape name="pipeEffect01" translation="-0.000407 0 0" rotation="-90 0 180" shapeId="2" clipDistance="100" nodeId="44" castsShadows="true" receiveShadows="true" materialIds="5"/>
+            <Shape name="pipeEffectSmoke01" translation="1.13457e-07 -3.25029 0" rotation="0 0 2e-06" shapeId="3" visibility="false" clipDistance="100" nodeId="45" castsShadows="true" receiveShadows="true" materialIds="5"/>
           </TransformGroup>
+        </TransformGroup>
+        <TransformGroup name="turretSAP2PipeVar02" translation="-1.32977 1.89186 3.85672" rotation="-0.00325074 -0.0032492 0.021616" nodeId="644">
+          <TransformGroup name="effect02" translation="-0.145396 -1.06472 0.0602641" rotation="-3.3069 1.33402e-08 -9.39692" nodeId="645">
+            <Shape name="pipeEffect02" translation="-0.000407 0 0" rotation="-90 0 180" shapeId="2" clipDistance="100" nodeId="646" castsShadows="true" receiveShadows="true" materialIds="5"/>
+            <Shape name="pipeEffectSmoke02" translation="1.13457e-07 -3.25029 0" rotation="0 0 2e-06" shapeId="3" visibility="false" clipDistance="100" nodeId="647" castsShadows="true" receiveShadows="true" materialIds="5"/>
+          </TransformGroup>
+        </TransformGroup>
+        <TransformGroup name="turretPTArm04" translation="0.0523642 3.5809 0.497057" nodeId="658">
+          <TransformGroup name="effect03" translation="-0.127982 0.143406 -3.65976" rotation="90 -8.15429e-07 -7.12871e-14" nodeId="659">
+            <Shape name="pipeEffect03" translation="-0.000407 0 0" rotation="-90 0 180" shapeId="2" clipDistance="100" nodeId="660" castsShadows="true" receiveShadows="true" materialIds="5"/>
+            <Shape name="pipeEffectSmoke03" translation="1.13457e-07 -3.25029 0" rotation="0 0 2e-06" shapeId="3" visibility="false" clipDistance="100" nodeId="661" castsShadows="true" receiveShadows="true" materialIds="5"/>
+          </TransformGroup>
+        </TransformGroup>
+      </TransformGroup>
+      <TransformGroup name="slurryHeight" nodeId="636">
+        <TransformGroup name="pgII28Genesis_vis" nodeId="637">
+          <TransformGroup name="emptyNode" translation="0 1.247 0" nodeId="638"/>
+          <TransformGroup name="fullNode" translation="0 3.418 0" nodeId="639"/>
         </TransformGroup>
       </TransformGroup>
     </TransformGroup>

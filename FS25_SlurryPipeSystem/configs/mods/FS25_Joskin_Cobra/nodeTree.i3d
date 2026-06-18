@@ -2,7 +2,7 @@
 
 <i3D name="nodeTree.i3d" version="1.6" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://i3d.giants.ch/schema/i3d-1.6.xsd">
   <Asset>
-    <Export program="GIANTS Editor 64bit" version="10.0.11"/>
+    <Export program="GIANTS Editor 64bit" version="10.0.12"/>
   </Asset>
 
   <Files>
@@ -75,9 +75,15 @@
           <TransformGroup name="workAreaHeight02" translation="0.202501 -1.43145 -7.51614" nodeId="45"/>
         </TransformGroup>
       </TransformGroup>
-      <TransformGroup name="outsideControl" nodeId="47">
-        <TransformGroup name="Cobra_vis" nodeId="48">
-          <TransformGroup name="pumpControl01" translation="0 0.897661 2.94761" nodeId="49"/>
+      <TransformGroup name="outsideControl" nodeId="46">
+        <TransformGroup name="Cobra_vis" nodeId="47">
+          <TransformGroup name="pumpControl01" translation="0 0.897661 2.94761" nodeId="48"/>
+        </TransformGroup>
+      </TransformGroup>
+      <TransformGroup name="slurryHeight" nodeId="71">
+        <TransformGroup name="Cobra_vis" nodeId="72">
+          <TransformGroup name="emptyNode" translation="0 0.876 0" nodeId="73"/>
+          <TransformGroup name="fullNode" translation="0 3.046 0" nodeId="74"/>
         </TransformGroup>
       </TransformGroup>
     </TransformGroup>

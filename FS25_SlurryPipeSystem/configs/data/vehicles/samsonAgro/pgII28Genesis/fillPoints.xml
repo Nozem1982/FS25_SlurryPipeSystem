@@ -12,6 +12,8 @@
 	
 	<pump pumpType="HVP"/>        <!-- profi2, Samson -->
 	
+	<surfaceRef emptyNode="emptyNode" fullNode="fullNode"/>
+	
 	<!-- Pressure section optional. Omit entirely to use the SPS defaults shown below.
 		maxPressure     : ±bar ceiling; HUD reads from -this to +this
 		minThreshold    : bar of stored pressure needed before flow can start
@@ -40,15 +42,30 @@
             tipType="OPEN_PIT"
             centreNodeName="SPS_fillArmCentre02"
             fillUnitIndex="1"
-        />
+        >
+            <effects>
+                <effectNode effectClass="PipeEffect03" effectNode="effect03" materialType="pipe"
+                            maxBending="0.8" extraDistance="0.1" positionUpdateNodes="pipeEffectSmoke03"/>
+                <effectNode effectNode="pipeEffectSmoke03" materialType="unloadingSmoke"
+                            delay="0.1" alignToWorldY="true"/>
+            </effects>
+        </fillArm>
 
         <fillArm
             id="2"
             cylinderedConfigIndex="1"
-            tipType="RUBBER_BOOT"
+            tipType="RUBBER_BOOT_PIT"
             tipNodeName="SPS_fillArmTip01"
+			centreNodeName="SPS_fillArmTip01"
             fillUnitIndex="1"
-        />
+        >
+            <effects>
+                <effectNode effectClass="PipeEffect01" effectNode="effect01" materialType="pipe"
+                            maxBending="0.8" extraDistance="0.1" positionUpdateNodes="pipeEffectSmoke01"/>
+                <effectNode effectNode="pipeEffectSmoke01" materialType="unloadingSmoke"
+                            delay="0.1" alignToWorldY="true"/>
+            </effects>
+        </fillArm>
 
         <fillArm
             id="3"
@@ -58,9 +75,9 @@
             fillUnitIndex="1"
         >
             <effects>
-                <effectNode effectClass="PipeEffect" effectNode="effect" materialType="pipe"
-                            maxBending="0.8" extraDistance="0.1" positionUpdateNodes="pipeEffectSmoke"/>
-                <effectNode effectNode="pipeEffectSmoke" materialType="unloadingSmoke"
+                <effectNode effectClass="PipeEffect02" effectNode="effect02" materialType="pipe"
+                            maxBending="0.8" extraDistance="0.1" positionUpdateNodes="pipeEffectSmoke02"/>
+                <effectNode effectNode="pipeEffectSmoke02" materialType="unloadingSmoke"
                             delay="0.1" alignToWorldY="true"/>
             </effects>
         </fillArm>
@@ -121,7 +138,7 @@
             id="1"
             lowerNodeName="SPS_rubberBootLower01"
             upperNodeName="SPS_rubberBootUpper01"
-            valveType="HYDRAULIC"
+            valveType="NONE"
             fillUnitIndex="1"
         />
 

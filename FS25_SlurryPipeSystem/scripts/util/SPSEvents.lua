@@ -177,7 +177,10 @@ end
 
 function SlurryPipeConnectEvent:run(connection)
     if not connection:getIsServer() then
-        g_server:broadcastEvent(self, false, connection, self.vehicleA)
+        -- Include the originating client (ignoreConnection = nil): the partner coupling
+        -- is resolved server-side, so the sender cannot apply optimistically and must
+        -- receive the echo to render the pipe locally.
+        g_server:broadcastEvent(self, false, nil, self.vehicleA)
     end
     if g_slurryPipeManager ~= nil then
         g_slurryPipeManager:applyConnect(self.vehicleA, self.targetObject, self.targetType, self.couplingIdA, self.couplingIdB)
@@ -226,7 +229,8 @@ end
 
 function SlurryPipeDisconnectEvent:run(connection)
     if not connection:getIsServer() then
-        g_server:broadcastEvent(self, false, connection, self.vehicleA)
+        -- Include the originating client so it removes the pipe locally.
+        g_server:broadcastEvent(self, false, nil, self.vehicleA)
     end
     if g_slurryPipeManager ~= nil then
         g_slurryPipeManager:applyDisconnect(self.vehicleA, self.couplingIdA)
@@ -309,7 +313,8 @@ end
 
 function SlurryValveStateEvent:run(connection)
     if not connection:getIsServer() then
-        g_server:broadcastEvent(self, false, connection, self.vehicleA)
+        -- Include the originating client so it applies the coupling valve state locally.
+        g_server:broadcastEvent(self, false, nil, self.vehicleA)
     end
     if g_slurryPipeManager ~= nil then
         -- If a placeable owner was transmitted, narrow the lookup to that

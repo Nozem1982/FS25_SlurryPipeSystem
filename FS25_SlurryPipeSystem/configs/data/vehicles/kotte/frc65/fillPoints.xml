@@ -13,6 +13,8 @@
 	
 	<pump pumpType="openTop"/>    <!-- FRC65 -->
 	
+	<surfaceRef emptyNode="emptyNode" fullNode="fullNode"/>
+	
     <fillArms/>
 
     <pipeCouplings>

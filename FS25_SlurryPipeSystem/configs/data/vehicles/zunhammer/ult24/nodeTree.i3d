@@ -2,7 +2,7 @@
 
 <i3D name="nodeTree.i3d" version="1.6" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://i3d.giants.ch/schema/i3d-1.6.xsd">
   <Asset>
-    <Export program="GIANTS Editor 64bit" version="10.0.11"/>
+    <Export program="GIANTS Editor 64bit" version="10.0.12"/>
   </Asset>
 
   <Files>
@@ -34,13 +34,19 @@
               <TransformGroup name="SPS_pipeCoupler01Arc01" translation="1.5 0 2.5" nodeId="18"/>
               <TransformGroup name="SPS_pipeCoupler01Arc02" translation="-1.5 0 2.5" nodeId="19"/>
             </TransformGroup>
-            <TransformGroup name="inNode" nodeId="23"/>
-            <TransformGroup name="outNode" rotation="0 180 0" nodeId="24"/>
+            <TransformGroup name="inNode" nodeId="20"/>
+            <TransformGroup name="outNode" rotation="0 180 0" nodeId="21"/>
           </TransformGroup>
         </TransformGroup>
       </TransformGroup>
-      <TransformGroup name="pumpControls" nodeId="20"/>
-      <TransformGroup name="exhaustNode" translation="1.14868 1.04626 -3.37517" nodeId="21"/>
+      <TransformGroup name="pumpControls" nodeId="22"/>
+      <TransformGroup name="exhaustNode" translation="1.14868 1.04626 -3.37517" nodeId="23"/>
+      <TransformGroup name="slurryHeight" nodeId="24">
+        <TransformGroup name="ult24_vis" nodeId="25">
+          <TransformGroup name="emptyNode" translation="0 0.846594 0" nodeId="26"/>
+          <TransformGroup name="fullNode" translation="0 3 0" nodeId="27"/>
+        </TransformGroup>
+      </TransformGroup>
     </TransformGroup>
   </Scene>
 

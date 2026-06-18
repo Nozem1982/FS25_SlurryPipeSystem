@@ -2,7 +2,7 @@
 
 <i3D name="nodeTree.i3d" version="1.6" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://i3d.giants.ch/schema/i3d-1.6.xsd">
   <Asset>
-    <Export program="GIANTS Editor 64bit" version="10.0.11"/>
+    <Export program="GIANTS Editor 64bit" version="10.0.12"/>
   </Asset>
 
   <Files>
@@ -49,6 +49,12 @@
             <TransformGroup name="inNode" nodeId="28"/>
             <TransformGroup name="outNode" rotation="0 180 0" nodeId="29"/>
           </TransformGroup>
+        </TransformGroup>
+      </TransformGroup>
+      <TransformGroup name="slurryHeight" nodeId="52">
+        <TransformGroup name="config_slurry" nodeId="53">
+          <TransformGroup name="emptyNode" translation="0 1.267 0" nodeId="54"/>
+          <TransformGroup name="fullNode" translation="0 3.541 0" nodeId="55"/>
         </TransformGroup>
       </TransformGroup>
     </TransformGroup>
